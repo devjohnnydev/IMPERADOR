@@ -100,3 +100,4 @@ def gerar_payload_pix_brcode(
 
     crc_hex = calcular_crc16_ccitt(payload_sem_crc)
     return f"{payload_sem_crc}{crc_hex}"
+

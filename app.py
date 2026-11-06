@@ -36,6 +36,10 @@ from database import (
     obter_dados_iniciais_galpao_imperador,
     salvar_estado_completo,
 )
+from instagram_publisher import (
+    gerar_legenda_instagram,
+    publicar_no_instagram_graph_api,
+)
 from pix_qrcode import gerar_payload_pix_brcode
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -179,6 +183,50 @@ class ImperadorPythonHandler(BaseHTTPRequestHandler):
                 self._responder_json(400, {"ok": False, "error": "Campo 'state' ausente"})
             return
 
+        # API: Publicar do Site direto para o Instagram (Meta Graph API / Webhook / Feed do Site)
+        if rota == "/api/instagram/publish":
+            estado = ler_estado_completo()
+            cfg = estado.get("settings", {})
+            ig_cfg = cfg.get("instagramConfig", {})
+
+            titulo = payload.get("title", "Novidade no Imperador Lounge Bar")
+            descricao = payload.get("description", "")
+            preco = float(payload.get("price", 0.0) or 0.0)
+            badge = payload.get("badge", "Destaque Imperador")
+            image_url = payload.get("imageUrl", cfg.get("heroCoverUrl", ""))
+            post_type = payload.get("postType", "FEED")
+            caption_custom = (payload.get("caption") or "").strip()
+
+            if not caption_custom:
+                caption_custom = gerar_legenda_instagram(
+                    titulo=titulo,
+                    descricao=descricao,
+                    preco=preco,
+                    badge=badge,
+                    nome_lounge=cfg.get("brandName", "IMPERADOR LOUNGE BAR"),
+                    instagram_handle=cfg.get("instagram", "@imperadorloungebar"),
+                    endereco=cfg.get("address", ""),
+                )
+
+            resultado_ig = publicar_no_instagram_graph_api(
+                ig_user_id=payload.get("igUserId") or ig_cfg.get("igUserId", ""),
+                access_token=payload.get("accessToken") or ig_cfg.get("accessToken", ""),
+                image_url=image_url,
+                caption=caption_custom,
+                post_type=post_type,
+                webhook_url=payload.get("webhookUrl") or ig_cfg.get("webhookUrl", ""),
+            )
+
+            self._responder_json(
+                200,
+                {
+                    "ok": True,
+                    "caption": caption_custom,
+                    "instagramResult": resultado_ig,
+                },
+            )
+            return
+
         # API: Restaurar dados iniciais do Galpão 03 / Imperador Lounge Bar
         if rota == "/api/reset":
             estado_padrao = obter_dados_iniciais_galpao_imperador()
@@ -222,3 +270,4 @@ def iniciar_servidor() -> None:
 
 if __name__ == "__main__":
     iniciar_servidor()
+

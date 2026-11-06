@@ -23,8 +23,58 @@ window.INITIAL_IMPERADOR_STATE = {
     isOpen: true,
     bannerAnnouncement: "🔥 HAPPY HOUR IMPERIAL: Double Rosh & Balde de Heineken com preço especial até às 21h! Peça direto pelo Tablet ou QR Code com PIX instantâneo.",
     heroCoverUrl: "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=1400&q=80",
-    adminPin: "1234"
+    adminPin: "1234",
+    instagramConfig: {
+      profileUrl: "https://www.instagram.com/ogalpao03/",
+      autoPostNewProducts: true,
+      autoPostPromotions: true,
+      igUserId: "",
+      accessToken: "",
+      webhookUrl: ""
+    }
   },
+
+  socialPosts: [
+    {
+      id: "POST-IG-01",
+      title: "🔥 SEXTA IMPERIAL: Double Sessão Rosh (Love 66 / Ziggy) + DJ Residente",
+      caption: "👑 IMPERADOR LOUNGE BAR\n\n🔥 Hoje tem Double Sessão de Narguilé com as melhores essências (Adalya Love 66, Ziggy Tropical e Zomo Swiss Alps)!\n💰 De R$ 85,00 por apenas *R$ 69,90*!\n\n📲 Peça direto no Tablet da sua mesa com PIX QR Code!\n#ImperadorLoungeBar #Tabacaria #Narguile #Galpao03Style #LoungeVIP",
+      imageUrl: "https://images.unsplash.com/photo-1527661591475-527312dd65f5?auto=format&fit=crop&w=800&q=80",
+      price: 69.90,
+      badge: "Story & Feed",
+      postType: "FEED + STORIES",
+      linkedItemId: "item-rosh-imperial-double",
+      createdAt: "Hoje • 18:30",
+      igStatus: "Publicado no Site & Sincronizado c/ Instagram",
+      likes: 248
+    },
+    {
+      id: "POST-IG-02",
+      title: "🍾 Combo Gin Tanqueray + 5 Red Bull Tropical no Camarote Imperial",
+      caption: "👑 REI DO CAMAROTE • IMPERADOR LOUNGE BAR\n\n🔥 Combo Gin Tanqueray 750ml + 5 Red Bull + Especiarias e Taças de Cristal!\n💰 Valor especial: *R$ 349,90*\n\n📍 Av. Imperial, 300 - Centro\n#ImperadorLoungeBar #GinTanqueray #CamaroteVIP #Drinks",
+      imageUrl: "https://images.unsplash.com/photo-1551024709-8f23befc6f87?auto=format&fit=crop&w=800&q=80",
+      price: 349.90,
+      badge: "Camarote VIP",
+      postType: "FEED",
+      linkedItemId: "item-combo-tanqueray",
+      createdAt: "Hoje • 19:15",
+      igStatus: "Publicado no Site & Sincronizado c/ Instagram",
+      likes: 312
+    },
+    {
+      id: "POST-IG-03",
+      title: "🥩 Tábua Imperial Galpão 03: Picanha na Chapa + Fritas Cheddar & Bacon",
+      caption: "👑 GASTRONOMIA DE LOUNGE • IMPERADOR\n\n🔥 500g de Picanha Maturada na chapa fumegante + 400g de Fritas com Cheddar Cremoso e Bacon!\n💰 Apenas *R$ 119,90* (Serve 3 a 4 pessoas)\n\n#ImperadorLoungeBar #PicanhaNaChapa #Gastrobar #Porcoes",
+      imageUrl: "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=800&q=80",
+      price: 119.90,
+      badge: "Gastronomia",
+      postType: "STORIES",
+      linkedItemId: "item-tabua-imperador-chapa",
+      createdAt: "Hoje • 20:00",
+      igStatus: "Publicado no Site & Sincronizado c/ Instagram",
+      likes: 419
+    }
+  ],
 
   categories: [
     { id: "destaques", name: "Destaques & Promoções", icon: "🔥", order: 1, station: "bar", description: "Os campeões de vendas da noite e combos especiais Happy Hour" },

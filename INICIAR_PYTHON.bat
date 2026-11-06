@@ -7,3 +7,4 @@ echo   INICIANDO IMPERADOR LOUNGE BAR EM PYTHON (SQLite3 + PIX BRCode)
 echo ====================================================================
 python app.py
 pause
+

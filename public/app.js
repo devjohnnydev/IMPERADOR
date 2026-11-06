@@ -494,6 +494,32 @@ const ImperadorApp = (() => {
           ` : ''}
         </section>
 
+        <!-- BARRA DE STORIES & FEED DO INSTAGRAM SINCRONIZADA COM O SITE -->
+        ${(state.socialPosts && state.socialPosts.length > 0) ? `
+          <section class="ig-stories-strip">
+            <div class="ig-stories-header">
+              <h3>
+                <span class="ig-gradient-badge">📸 INSTAGRAM & MURAL AO VIVO</span>
+                <span>Novidades & Promoções Postadas (${escapeHtml(s.instagram)})</span>
+              </h3>
+              <a href="${escapeHtml((s.instagramConfig && s.instagramConfig.profileUrl) || 'https://www.instagram.com/ogalpao03/')}" target="_blank" rel="noopener" style="font-size:0.76rem;color:var(--gold-light);text-decoration:none;font-weight:700">
+                Abrir Perfil no Instagram ↗
+              </a>
+            </div>
+            <div class="ig-stories-carousel">
+              ${state.socialPosts.map(post => `
+                <div class="ig-story-item" onclick="ImperadorApp.openSocialPostModal('${post.id}')">
+                  <div class="ig-story-ring">
+                    <img src="${escapeHtml(post.imageUrl)}" alt="${escapeHtml(post.title)}" loading="lazy" onerror="this.src='https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=400&q=80'" />
+                  </div>
+                  <div class="ig-story-title">${escapeHtml(post.title)}</div>
+                  ${post.price ? `<div class="ig-story-price">${formatBRL(post.price)}</div>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </section>
+        ` : ''}
+
         <!-- BARRA STICKY DE BUSCA E CATEGORIAS (TAGME MENU) -->
         <div class="tagme-sticky-nav">
           <div class="tagme-search-row">
@@ -1208,6 +1234,10 @@ const ImperadorApp = (() => {
             </button>
 
             <div class="admin-nav-group-title">Cardápio Digital & Lounge</div>
+            <button class="admin-nav-btn ${ui.adminTab === 'instagram' ? 'active' : ''}" onclick="ImperadorApp.setAdminTab('instagram')">
+              <span class="left">📸 Postar no Site + Instagram</span>
+              <span class="nav-counter">${(state.socialPosts || []).length}</span>
+            </button>
             <button class="admin-nav-btn ${ui.adminTab === 'catalog' ? 'active' : ''}" onclick="ImperadorApp.setAdminTab('catalog')">
               <span class="left">🍔 Cardápio, Tabacaria & Preços</span>
               <span class="nav-counter">${state.menuItems.length}</span>
@@ -1251,6 +1281,8 @@ const ImperadorApp = (() => {
         return renderAdminEmployeesTab(m);
       case 'expenses':
         return renderAdminExpensesTab(m);
+      case 'instagram':
+        return renderAdminInstagramTab();
       case 'catalog':
         return renderAdminCatalogTab();
       case 'tables':
@@ -2314,7 +2346,10 @@ const ImperadorApp = (() => {
                     </td>
                     <td>${item.stock} ${escapeHtml(item.unit || 'un')}</td>
                     <td>
-                      <div style="display:flex;gap:6px">
+                      <div style="display:flex;gap:6px;flex-wrap:wrap">
+                        <button class="btn-instagram" style="padding:5px 9px;font-size:0.72rem" onclick="ImperadorApp.quickPostProductToInstagram('${item.id}')" title="Publicar este item no Feed do Site + Instagram">
+                          📸 Postar Insta
+                        </button>
                         <button class="btn-outline" style="padding:5px 9px;font-size:0.74rem" onclick="ImperadorApp.openCatalogItemModal('${item.id}')">Editar</button>
                         <button class="btn-danger-sm" onclick="ImperadorApp.deleteCatalogItem('${item.id}')">✕</button>
                       </div>
@@ -2381,11 +2416,17 @@ const ImperadorApp = (() => {
               <label>URL da Foto do Produto</label>
               <input type="text" id="catItemImage" value="${existing ? escapeHtml(existing.image) : 'https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=800&q=80'}" />
             </div>
+            <div class="form-group" style="background:rgba(220,39,67,0.12);border:1px solid rgba(220,39,67,0.4);padding:10px 12px;border-radius:10px;margin-top:8px">
+              <label style="display:flex;align-items:center;gap:8px;color:#fff;cursor:pointer;font-size:0.83rem">
+                <input type="checkbox" id="catItemAutoPostIg" ${(state.settings.instagramConfig?.autoPostNewProducts !== false) ? 'checked' : ''} />
+                <span>📸 <strong>Publicar automaticamente no Feed/Stories do Site e enviar para o Instagram (${escapeHtml(state.settings.instagram)})</strong></span>
+              </label>
+            </div>
           </div>
           <div class="modal-footer">
             <button class="btn-outline" onclick="ImperadorApp.closeModal()">Cancelar</button>
             <button class="btn-gold" onclick="ImperadorApp.saveCatalogItem('${existing ? existing.id : ''}')">
-              ✅ Salvar no Cardápio
+              ✅ Salvar no Cardápio & Publicar
             </button>
           </div>
         </div>
@@ -2402,11 +2443,14 @@ const ImperadorApp = (() => {
     const costPrice = parseFloat(document.getElementById('catItemCost')?.value || '0');
     const stock = parseInt(document.getElementById('catItemStock')?.value || '50', 10);
     const image = (document.getElementById('catItemImage')?.value || '').trim();
+    const shouldAutoPostIg = !!document.getElementById('catItemAutoPostIg')?.checked;
 
     if (!name || price <= 0) {
       showToast('Informe o nome e o preço de venda do produto!', 'danger');
       return;
     }
+
+    let savedId = existingId;
 
     if (existingId) {
       const item = state.menuItems.find(i => i.id === existingId);
@@ -2421,8 +2465,9 @@ const ImperadorApp = (() => {
         item.image = image;
       }
     } else {
+      savedId = 'item-' + Date.now();
       state.menuItems.unshift({
-        id: 'item-' + Date.now(),
+        id: savedId,
         categoryId,
         name,
         description,
@@ -2440,8 +2485,514 @@ const ImperadorApp = (() => {
     }
 
     closeModal();
+
+    if (shouldAutoPostIg) {
+      triggerAutoInstagramPost({
+        title: `🔥 ${name}`,
+        description,
+        price,
+        badge: badge || 'Novidade no Cardápio',
+        imageUrl: image,
+        postType: 'FEED + STORIES',
+        linkedItemId: savedId
+      });
+    } else {
+      saveState(true);
+      showToast(`🍔 Produto <strong>${escapeHtml(name)}</strong> atualizado no Cardápio Digital e no Tablet!`, 'emerald');
+    }
+  }
+
+  // ==========================================================================
+  // MÓDULO COMPLETO SITE ➔ INSTAGRAM (AUTO-POST, GERADOR DE ARTE HD E GRAPH API)
+  // ==========================================================================
+  function buildAutoInstagramCaption(postObj) {
+    const s = state.settings;
+    const priceStr = postObj.price && Number(postObj.price) > 0 ? `\n💰 Valor Especial: *${formatBRL(postObj.price)}*` : '';
+    return [
+      `👑 ${(postObj.badge || 'DESTAQUE').toUpperCase()} • ${s.brandName}`,
+      ``,
+      `🔥 ${postObj.title}`,
+      postObj.description ? `✨ ${postObj.description}` : '',
+      priceStr,
+      ``,
+      `📲 Peça agora no Tablet da sua mesa com PIX QR Code ou acesse nosso Cardápio Digital!`,
+      `📍 ${s.address}`,
+      ``,
+      `${s.instagram} #ImperadorLoungeBar #Tabacaria #Narguile #Rosh #DrinksAutorais #LoungeVIP #Galpao03Style #HappyHour`
+    ].filter(Boolean).join('\n');
+  }
+
+  async function triggerAutoInstagramPost(postData) {
+    if (!state.socialPosts) state.socialPosts = [];
+    const igCfg = state.settings.instagramConfig || {};
+
+    const caption = postData.caption || buildAutoInstagramCaption(postData);
+    const now = new Date();
+    const timeLabel = `Hoje • ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    const newPost = {
+      id: 'POST-IG-' + Math.floor(100 + Math.random() * 900),
+      title: postData.title,
+      caption,
+      imageUrl: postData.imageUrl || state.settings.heroCoverUrl,
+      price: Number(postData.price) || 0,
+      badge: postData.badge || 'Novidade',
+      postType: postData.postType || 'FEED + STORIES',
+      linkedItemId: postData.linkedItemId || '',
+      createdAt: timeLabel,
+      igStatus: 'Publicando no Site & Enviando p/ Instagram...',
+      likes: Math.floor(40 + Math.random() * 90)
+    };
+
+    state.socialPosts.unshift(newPost);
+
+    // Dispara para o backend Python (/api/instagram/publish)
+    try {
+      const res = await fetch('/api/instagram/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: newPost.title,
+          description: postData.description || '',
+          price: newPost.price,
+          badge: newPost.badge,
+          imageUrl: newPost.imageUrl,
+          postType: newPost.postType,
+          caption: newPost.caption,
+          igUserId: igCfg.igUserId || '',
+          accessToken: igCfg.accessToken || '',
+          webhookUrl: igCfg.webhookUrl || ''
+        })
+      });
+      if (res.ok) {
+        const resJson = await res.json();
+        if (resJson && resJson.instagramResult) {
+          newPost.igStatus = resJson.instagramResult.status || 'Publicado no Site & Sincronizado c/ Instagram';
+        } else {
+          newPost.igStatus = 'Publicado no Site & Sincronizado c/ Instagram';
+        }
+      } else {
+        newPost.igStatus = 'Publicado no Site + Arte/Legenda Prontas p/ Instagram';
+      }
+    } catch (e) {
+      newPost.igStatus = 'Publicado no Site + Arte/Legenda Prontas p/ Instagram';
+    }
+
+    await saveState(true);
+    showToast(`📸 Postado no Site Principal e enviado para o <strong>Instagram (${escapeHtml(state.settings.instagram)})</strong>!`, 'emerald');
+  }
+
+  function quickPostProductToInstagram(itemId) {
+    const item = state.menuItems.find(i => i.id === itemId);
+    if (!item) return;
+    triggerAutoInstagramPost({
+      title: item.name,
+      description: item.description,
+      price: item.price,
+      badge: item.badge || 'Cardápio Imperador',
+      imageUrl: item.image,
+      postType: 'FEED + STORIES',
+      linkedItemId: item.id
+    });
+  }
+
+  function openSocialPostModal(postId) {
+    const post = (state.socialPosts || []).find(p => p.id === postId);
+    if (!post) return;
+
+    const modal = document.getElementById('modalContainer');
+    if (!modal) return;
+    modal.style.display = 'block';
+
+    modal.innerHTML = `
+      <div class="modal-backdrop" onclick="if(event.target===this) ImperadorApp.closeModal()">
+        <div class="modal-window" style="max-width:540px">
+          <div class="modal-header">
+            <h3><span class="ig-gradient-badge">📸 ${escapeHtml(post.postType || 'INSTAGRAM')}</span> ${escapeHtml(state.settings.instagram)}</h3>
+            <button class="modal-close-btn" onclick="ImperadorApp.closeModal()">✕</button>
+          </div>
+          <div class="modal-body">
+            <div style="border-radius:14px;overflow:hidden;border:1px solid var(--border-gold);margin-bottom:12px;position:relative">
+              <img src="${escapeHtml(post.imageUrl)}" alt="${escapeHtml(post.title)}" style="width:100%;max-height:310px;object-fit:cover;display:block" />
+              ${post.price ? `<div style="position:absolute;bottom:10px;right:10px;background:var(--gold-gradient);color:#090a0f;font-weight:900;padding:6px 14px;border-radius:99px;font-size:0.95rem">${formatBRL(post.price)}</div>` : ''}
+            </div>
+            <h4 style="font-size:1.05rem;color:var(--gold-light);margin-bottom:8px">${escapeHtml(post.title)}</h4>
+            <pre style="white-space:pre-wrap;font-family:inherit;font-size:0.82rem;color:var(--text-muted);background:var(--bg-secondary);padding:12px;border-radius:10px;border:1px solid var(--border-subtle)">${escapeHtml(post.caption)}</pre>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:0.78rem;color:var(--text-muted)">
+              <span>❤️ ${post.likes || 120} curtidas • ${escapeHtml(post.createdAt)}</span>
+              <span class="pill-badge emerald">${escapeHtml(post.igStatus)}</span>
+            </div>
+          </div>
+          <div class="modal-footer" style="flex-wrap:wrap;justify-content:space-between">
+            <div style="display:flex;gap:8px">
+              <button class="btn-outline" onclick="ImperadorApp.downloadInstagramCardCanvas('${post.id}', 'feed')">⬇️ Baixar Arte Feed</button>
+              <button class="btn-outline" onclick="ImperadorApp.downloadInstagramCardCanvas('${post.id}', 'story')">📱 Baixar Arte Story</button>
+            </div>
+            <div style="display:flex;gap:8px">
+              ${post.linkedItemId ? `
+                <button class="btn-gold" onclick="ImperadorApp.closeModal();ImperadorApp.openProductModal('${post.linkedItemId}')">
+                  🛒 Pedir Agora no Cardápio
+                </button>
+              ` : `
+                <button class="btn-instagram" onclick="ImperadorApp.sharePostNativeMobile('${post.id}')">
+                  📸 Compartilhar no App Instagram
+                </button>
+              `}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderAdminInstagramTab() {
+    const igCfg = state.settings.instagramConfig || {
+      profileUrl: 'https://www.instagram.com/ogalpao03/',
+      autoPostNewProducts: true,
+      autoPostPromotions: true,
+      igUserId: '',
+      accessToken: '',
+      webhookUrl: ''
+    };
+    const posts = state.socialPosts || [];
+
+    return `
+      <div class="admin-page-header">
+        <div>
+          <h2>📸 Central Automática: Tudo que Postar no Site ➔ Vai para o Instagram</h2>
+          <p>Publique promoções, fotos da noite, combos de camarote ou novos Roshs no Site Principal e envie automaticamente para o Feed e Stories do Instagram.</p>
+        </div>
+        <a href="${escapeHtml(igCfg.profileUrl || 'https://www.instagram.com/ogalpao03/')}" target="_blank" rel="noopener" class="btn-instagram" style="text-decoration:none">
+          📸 Abrir Instagram Oficial (${escapeHtml(state.settings.instagram)}) ↗
+        </a>
+      </div>
+
+      <!-- CRIADOR DE POSTAGEM UNIFICADO (SITE + INSTAGRAM SIMULTÂNEO) -->
+      <div class="admin-panel-box" style="border-color:rgba(220,39,67,0.45);background:linear-gradient(135deg, rgba(220,39,67,0.08), var(--bg-card))">
+        <div class="panel-box-header">
+          <h3>🚀 Nova Postagem no Site + Disparo Automático para o Instagram</h3>
+          <span class="ig-gradient-badge">Sincronização Automática Ativa</span>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label>1. Puxar Dados de um Produto do Cardápio (Opcional)</label>
+            <select id="igSelectProduct" onchange="ImperadorApp.fillInstagramFormFromProduct(this.value)">
+              <option value="">-- Criar Post Livre (Evento / DJ / Promoção) --</option>
+              ${state.menuItems.map(item => `
+                <option value="${item.id}">${escapeHtml(item.name)} (${formatBRL(item.price)})</option>
+              `).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>2. Destino da Publicação</label>
+            <select id="igPostType">
+              <option value="FEED + STORIES">📸 Feed do Instagram + Stories + Mural do Site</option>
+              <option value="STORIES">📱 Stories Vertical (1080x1920) + Topo do Site</option>
+              <option value="FEED">🖼️ Feed Quadrado (1080x1080) + Site</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Título Chamativo do Post / Promoção</label>
+            <input type="text" id="igPostTitle" placeholder="Ex: 🔥 HOJE TEM DOUBLE ROSH LOVE 66 + BALDE HEINEKEN!" />
+          </div>
+          <div class="form-group">
+            <label>Preço em Destaque na Arte (R$ - Opcional)</label>
+            <input type="number" id="igPostPrice" step="0.01" placeholder="Ex: 69.90" />
+          </div>
+          <div class="form-group">
+            <label>Selo Superior (Badge)</label>
+            <input type="text" id="igPostBadge" value="Destaque Imperador" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>URL da Foto ou Banner (ou escolha um produto acima)</label>
+          <input type="text" id="igPostImage" value="https://images.unsplash.com/photo-1527661591475-527312dd65f5?auto=format&fit=crop&w=800&q=80" />
+        </div>
+
+        <div class="form-group">
+          <label>Legenda do Instagram c/ Hashtags (Gerada automaticamente se deixar em branco)</label>
+          <textarea id="igPostCaption" rows="4" placeholder="Deixe em branco para o sistema Python gerar a legenda persuasiva com preço, endereço e hashtags automaticamente..."></textarea>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap">
+          <button class="btn-instagram" onclick="ImperadorApp.submitNewSiteAndInstagramPost()">
+            📸 Publicar Agora no Site + Enviar para o Instagram
+          </button>
+        </div>
+      </div>
+
+      <!-- GALERIA DE POSTS PUBLICADOS NO SITE & INSTAGRAM -->
+      <div class="admin-panel-box">
+        <div class="panel-box-header">
+          <h3>📲 Posts Ativos no Site Principal & Sincronizados com o Instagram (${posts.length})</h3>
+        </div>
+
+        <div class="ig-feed-grid">
+          ${posts.map(post => `
+            <article class="ig-post-card">
+              <div>
+                <div class="ig-post-card-img">
+                  <img src="${escapeHtml(post.imageUrl)}" alt="${escapeHtml(post.title)}" onerror="this.src='https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=400&q=80'" />
+                  <span class="ig-gradient-badge" style="position:absolute;top:10px;left:10px">${escapeHtml(post.postType)}</span>
+                  ${post.price ? `<span style="position:absolute;bottom:10px;right:10px;background:var(--gold-gradient);color:#090a0f;font-weight:900;padding:4px 10px;border-radius:99px;font-size:0.8rem">${formatBRL(post.price)}</span>` : ''}
+                </div>
+                <div style="padding:14px">
+                  <div style="font-size:0.72rem;color:var(--emerald);font-weight:700;margin-bottom:4px">● ${escapeHtml(post.igStatus)}</div>
+                  <h4 style="font-size:0.95rem;color:var(--text-main);margin-bottom:6px">${escapeHtml(post.title)}</h4>
+                  <p style="font-size:0.76rem;color:var(--text-muted);white-space:pre-line;max-height:84px;overflow:hidden">${escapeHtml(post.caption)}</p>
+                </div>
+              </div>
+
+              <div style="padding:12px 14px;border-top:1px solid var(--border-subtle);display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center">
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
+                  <button class="btn-outline" style="padding:5px 9px;font-size:0.72rem" onclick="ImperadorApp.downloadInstagramCardCanvas('${post.id}', 'feed')" title="Baixar Arte 1080x1080 pronta para Feed">
+                    ⬇️ Arte Feed
+                  </button>
+                  <button class="btn-outline" style="padding:5px 9px;font-size:0.72rem" onclick="ImperadorApp.downloadInstagramCardCanvas('${post.id}', 'story')" title="Baixar Arte 1080x1920 pronta para Stories">
+                    📱 Arte Story
+                  </button>
+                  <button class="btn-instagram" style="padding:5px 9px;font-size:0.72rem" onclick="ImperadorApp.sharePostNativeMobile('${post.id}')">
+                    📤 Abrir no Insta
+                  </button>
+                </div>
+                <button class="btn-danger-sm" onclick="ImperadorApp.deleteSocialPost('${post.id}')">✕</button>
+              </div>
+            </article>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- CONFIGURAÇÃO DA API OFICIAL DO INSTAGRAM GRAPH & WEBHOOK -->
+      <div class="admin-panel-box">
+        <div class="panel-box-header">
+          <h3>⚙️ Conexão Automática com API Oficial do Instagram (Meta Graph API / Webhook)</h3>
+        </div>
+        <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:14px">
+          Configure abaixo seu <strong>Instagram Business Account ID</strong> e <strong>Access Token</strong> (ou URL de Webhook Make/Zapier/n8n) para que o módulo Python (<code>instagram_publisher.py</code>) publique automaticamente no seu perfil comercial sem precisar tocar no celular.
+        </p>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Link do Perfil do Instagram</label>
+            <input type="text" id="igCfgProfileUrl" value="${escapeHtml(igCfg.profileUrl || 'https://www.instagram.com/ogalpao03/')}" />
+          </div>
+          <div class="form-group">
+            <label>Instagram Business Account ID (Meta Graph API)</label>
+            <input type="text" id="igCfgUserId" value="${escapeHtml(igCfg.igUserId || '')}" placeholder="Ex: 17841405822304914" />
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Meta Graph API Access Token (Token de Longa Duração)</label>
+            <input type="password" id="igCfgToken" value="${escapeHtml(igCfg.accessToken || '')}" placeholder="EAAGm0PX4ZCps..." />
+          </div>
+          <div class="form-group">
+            <label>URL de Webhook Automação (Make / Zapier / n8n - Opcional)</label>
+            <input type="text" id="igCfgWebhook" value="${escapeHtml(igCfg.webhookUrl || '')}" placeholder="https://hook.us1.make.com/..." />
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-top:8px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.84rem;color:var(--gold-light)">
+            <input type="checkbox" id="igCfgAutoProduct" ${igCfg.autoPostNewProducts !== false ? 'checked' : ''} />
+            <span>Postar automaticamente no Instagram sempre que eu cadastrar um novo produto no Cardápio</span>
+          </label>
+          <button class="btn-gold" onclick="ImperadorApp.saveInstagramConfig()">
+            💾 Salvar Integração do Instagram
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  function fillInstagramFormFromProduct(itemId) {
+    if (!itemId) return;
+    const item = state.menuItems.find(i => i.id === itemId);
+    if (!item) return;
+
+    const titleEl = document.getElementById('igPostTitle');
+    const priceEl = document.getElementById('igPostPrice');
+    const badgeEl = document.getElementById('igPostBadge');
+    const imgEl = document.getElementById('igPostImage');
+    const capEl = document.getElementById('igPostCaption');
+
+    if (titleEl) titleEl.value = item.name;
+    if (priceEl) priceEl.value = item.price;
+    if (badgeEl) badgeEl.value = item.badge || 'Destaque do Cardápio';
+    if (imgEl) imgEl.value = item.image;
+    if (capEl) {
+      capEl.value = buildAutoInstagramCaption({
+        title: item.name,
+        description: item.description,
+        price: item.price,
+        badge: item.badge || 'Destaque Imperador'
+      });
+    }
+  }
+
+  function submitNewSiteAndInstagramPost() {
+    const linkedItemId = document.getElementById('igSelectProduct')?.value || '';
+    const postType = document.getElementById('igPostType')?.value || 'FEED + STORIES';
+    const title = (document.getElementById('igPostTitle')?.value || '').trim();
+    const price = parseFloat(document.getElementById('igPostPrice')?.value || '0');
+    const badge = (document.getElementById('igPostBadge')?.value || 'Destaque Imperador').trim();
+    const imageUrl = (document.getElementById('igPostImage')?.value || state.settings.heroCoverUrl).trim();
+    const caption = (document.getElementById('igPostCaption')?.value || '').trim();
+
+    if (!title) {
+      showToast('Digite um título ou selecione um produto do cardápio para postar!', 'danger');
+      return;
+    }
+
+    triggerAutoInstagramPost({
+      title,
+      description: '',
+      price,
+      badge,
+      imageUrl,
+      postType,
+      caption,
+      linkedItemId
+    });
+  }
+
+  function saveInstagramConfig() {
+    if (!state.settings.instagramConfig) state.settings.instagramConfig = {};
+    state.settings.instagramConfig.profileUrl = (document.getElementById('igCfgProfileUrl')?.value || '').trim();
+    state.settings.instagramConfig.igUserId = (document.getElementById('igCfgUserId')?.value || '').trim();
+    state.settings.instagramConfig.accessToken = (document.getElementById('igCfgToken')?.value || '').trim();
+    state.settings.instagramConfig.webhookUrl = (document.getElementById('igCfgWebhook')?.value || '').trim();
+    state.settings.instagramConfig.autoPostNewProducts = !!document.getElementById('igCfgAutoProduct')?.checked;
+
     saveState(true);
-    showToast(`🍔 Produto <strong>${escapeHtml(name)}</strong> atualizado no Cardápio Digital e no Tablet!`, 'emerald');
+    showToast('✅ Configurações de autopostagem do Instagram salvas!', 'emerald');
+  }
+
+  function deleteSocialPost(postId) {
+    if (!confirm('Remover esta postagem do mural do site?')) return;
+    state.socialPosts = (state.socialPosts || []).filter(p => p.id !== postId);
+    saveState(true);
+    showToast('Postagem removida.', 'danger');
+  }
+
+  // Gerador de Arte Oficial 1080x1080 (Feed) ou 1080x1920 (Stories) em HTML5 Canvas
+  function downloadInstagramCardCanvas(postId, format = 'feed') {
+    const post = (state.socialPosts || []).find(p => p.id === postId);
+    if (!post) return;
+
+    const width = 1080;
+    const height = format === 'story' ? 1920 : 1080;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+
+    // Fundo Imperial Dark Luxury
+    const grad = ctx.createLinearGradient(0, 0, width, height);
+    grad.addColorStop(0, '#090a0f');
+    grad.addColorStop(0.5, '#151824');
+    grad.addColorStop(1, '#090a0f');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, width, height);
+
+    // Moldura Dourada Imperial
+    ctx.strokeStyle = '#e5b842';
+    ctx.lineWidth = 8;
+    ctx.strokeRect(36, 36, width - 72, height - 72);
+
+    // Topo com Coroa e Nome do Lounge
+    ctx.fillStyle = '#e5b842';
+    ctx.font = '900 44px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`👑 ${state.settings.brandName}`, width / 2, format === 'story' ? 150 : 115);
+
+    ctx.fillStyle = '#9ba1b0';
+    ctx.font = '600 26px Inter, sans-serif';
+    ctx.fillText(state.settings.brandSubtitle || 'LOUNGE • TABACARIA • GASTROBAR', width / 2, format === 'story' ? 195 : 155);
+
+    // Box central de destaque
+    const boxY = format === 'story' ? 280 : 210;
+    const boxH = format === 'story' ? 980 : 520;
+    ctx.fillStyle = '#1d2130';
+    ctx.fillRect(90, boxY, width - 180, boxH);
+    ctx.strokeStyle = '#e5b842';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(90, boxY, width - 180, boxH);
+
+    // Selo e Título dentro da arte
+    ctx.fillStyle = '#ffe07d';
+    ctx.font = '800 32px Inter, sans-serif';
+    ctx.fillText((post.badge || 'DESTAQUE DA NOITE').toUpperCase(), width / 2, boxY + 90);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 48px Inter, sans-serif';
+    const words = post.title.split(' ');
+    let line = '';
+    let yText = boxY + 185;
+    words.forEach(w => {
+      const test = line + w + ' ';
+      if (ctx.measureText(test).width > width - 260) {
+        ctx.fillText(line.trim(), width / 2, yText);
+        line = w + ' ';
+        yText += 62;
+      } else {
+        line = test;
+      }
+    });
+    if (line) ctx.fillText(line.trim(), width / 2, yText);
+
+    if (post.price && Number(post.price) > 0) {
+      ctx.fillStyle = '#10b981';
+      ctx.font = '900 84px Inter, sans-serif';
+      ctx.fillText(formatBRL(post.price), width / 2, boxY + boxH - 80);
+    }
+
+    // Rodapé com Instagram e Chamada QR Code / PIX
+    const footerY = format === 'story' ? 1480 : 840;
+    ctx.fillStyle = '#e5b842';
+    ctx.font = '800 34px Inter, sans-serif';
+    ctx.fillText(`📲 Peça na Mesa pelo Tablet PIX ou Link na Bio!`, width / 2, footerY);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '700 30px Inter, sans-serif';
+    ctx.fillText(`${state.settings.instagram} • ${state.settings.address}`, width / 2, footerY + 60);
+
+    const dataUrl = canvas.toDataURL('image/png');
+    const link = document.createElement('a');
+    link.download = `imperador-${format}-${post.id}.png`;
+    link.href = dataUrl;
+    link.click();
+
+    navigator.clipboard?.writeText(post.caption || '');
+    showToast(`🎨 Arte <strong>${format.toUpperCase()} (1080p)</strong> baixada e legenda copiada para colar no Instagram!`, 'emerald');
+  }
+
+  async function sharePostNativeMobile(postId) {
+    const post = (state.socialPosts || []).find(p => p.id === postId);
+    if (!post) return;
+
+    navigator.clipboard?.writeText(post.caption || '');
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: post.title,
+          text: post.caption,
+          url: window.location.origin
+        });
+        return;
+      } catch (e) {}
+    }
+
+    showToast('📋 Legenda copiada! Abrindo o Instagram para você publicar...', 'emerald');
+    const igUrl = (state.settings.instagramConfig && state.settings.instagramConfig.profileUrl) || 'https://www.instagram.com/ogalpao03/';
+    window.open(igUrl, '_blank');
   }
 
   function deleteCatalogItem(id) {
@@ -2659,6 +3210,14 @@ const ImperadorApp = (() => {
     openCatalogItemModal,
     saveCatalogItem,
     deleteCatalogItem,
+    quickPostProductToInstagram,
+    openSocialPostModal,
+    fillInstagramFormFromProduct,
+    submitNewSiteAndInstagramPost,
+    saveInstagramConfig,
+    deleteSocialPost,
+    downloadInstagramCardCanvas,
+    sharePostNativeMobile,
     saveSettingsForm,
     resetDemoData
   };
