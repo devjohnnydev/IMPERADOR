@@ -1,0 +1,10 @@
+{
+  "name": "imperador-lounge-bar-erp",
+  "version": "1.0.0",
+  "description": "Sistema Completo Imperador Lounge Bar - Cardápio Digital (Estilo Galpão 03 / Tagme), Autoatendimento Tablet com PIX QR Code e ERP Administrativo Completo (Vendas, Compras, Estoque, Funcionários, Gastos Fixos e Lucro)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
+

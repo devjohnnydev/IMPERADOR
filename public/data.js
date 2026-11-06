@@ -1,0 +1,1099 @@
+// ============================================================================
+// DADOS INICIAIS - IMPERADOR LOUNGE BAR (Inspirado em O Galpão 03 / Tagme Menu)
+// ============================================================================
+
+window.INITIAL_IMPERADOR_STATE = {
+  settings: {
+    brandName: "IMPERADOR LOUNGE BAR",
+    brandSubtitle: "Lounge • Tabacaria • Gastrobar • Drinks Autorais",
+    tagline: "A Experiência Imperial inspirada no melhor estilo Lounge & Tabacaria (Galpão 03 Edition)",
+    instagram: "@imperadorloungebar",
+    referenceNote: "Layout & Cardápio Digital estilo Tagme Menu (O Galpão 03)",
+    address: "Av. Imperial, 300 - Centro • Lounge & Deck VIP",
+    openingHours: "Terça a Domingo • 17:00 às 04:00",
+    wifiSsid: "IMPERADOR_LOUNGE_5G",
+    wifiPass: "imperador2026",
+    whatsapp: "5511999990003",
+    pixKey: "pix@imperadorloungebar.com.br",
+    pixKeyType: "E-mail / CNPJ",
+    pixMerchantName: "IMPERADOR LOUNGE BAR",
+    pixMerchantCity: "SAO PAULO",
+    serviceFeePercent: 10,
+    enableServiceFeeByDefault: true,
+    isOpen: true,
+    bannerAnnouncement: "🔥 HAPPY HOUR IMPERIAL: Double Rosh & Balde de Heineken com preço especial até às 21h! Peça direto pelo Tablet ou QR Code com PIX instantâneo.",
+    heroCoverUrl: "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=1400&q=80",
+    adminPin: "1234"
+  },
+
+  categories: [
+    { id: "destaques", name: "Destaques & Promoções", icon: "🔥", order: 1, station: "bar", description: "Os campeões de vendas da noite e combos especiais Happy Hour" },
+    { id: "tabacaria", name: "Tabacaria & Narguilé (Rosh)", icon: "💨", order: 2, station: "tabacaria", description: "Sessões completas, Rosh avulso (Ziggy, Zomo, Adalya, Nay, Onix), Mix da Casa e Insumos" },
+    { id: "combos", name: "Combos & Garrafas VIP", icon: "🍾", order: 3, station: "bar", description: "Combos de Gin, Whisky 12 Anos, Vodka Premium e Espumantes com Energéticos e Gelo de Coco" },
+    { id: "drinks", name: "Drinks Autorais & Caipirinhas", icon: "🍹", order: 4, station: "bar", description: "Coquetelaria Imperial, Gin Tônica Especiarias, Moscow Mule e Caipiroskas de Frutas Frescas" },
+    { id: "cervejas", name: "Cervejas, Baldes & Energéticos", icon: "🍺", order: 5, station: "bar", description: "Baldes trincando de Heineken, Corona, Spaten, Original 600ml, Beats e Red Bull" },
+    { id: "porcoes", name: "Porções, Chapas & Petiscos", icon: "🍟", order: 6, station: "cozinha", description: "Gastronomia de Lounge: Picanha na Chapa, Batata Suprema Cheddar & Bacon, Coxinha sem Massa e Tábuas" },
+    { id: "burgers", name: "Burgers & Lanches Artesanais", icon: "🍔", order: 7, station: "cozinha", description: "Blend bovino suculento na brasa, queijo derretido e batata rústica" },
+    { id: "sobremesas", name: "Sobremesas & Sem Álcool", icon: "🍫", order: 8, station: "bar", description: "Petit Gâteau, Soda Italiana, Sucos Naturais, Refrigerantes e Águas" }
+  ],
+
+  menuItems: [
+    // ==================== 1. DESTAQUES & PROMOÇÕES ====================
+    {
+      id: "item-rosh-imperial-double",
+      categoryId: "destaques",
+      name: "Double Sessão Narguilé Imperial (2 Roshs)",
+      description: "Sessão completa no Narguilé Imperial Sultan/Zeus com 1º Rosh na hora + 1 Troca de Rosh inclusa, mangueira descartável lacrada, controle de calor Kaloud e troca de carvão de coco inclusa.",
+      price: 69.90,
+      oldPrice: 85.00,
+      costPrice: 18.50,
+      stock: 80,
+      minStock: 15,
+      unit: "sessão",
+      featured: true,
+      badge: "Campeão Galpão 03",
+      prepTime: "8 min",
+      image: "https://images.unsplash.com/photo-1527661591475-527312dd65f5?auto=format&fit=crop&w=800&q=80",
+      options: [
+        {
+          groupName: "Sabor do 1º Rosh (Essência)",
+          required: true,
+          choices: [
+            { name: "Mix Galpão/Imperador (Maracujá + Menta + Melancia)", price: 0 },
+            { name: "Adalya Love 66 (Melancia, Melão, Maracujá e Menta)", price: 0 },
+            { name: "Ziggy Tropical / Frutas Amarelas c/ Toque Ice", price: 0 },
+            { name: "Ziggy Burley Melancia Atômica + Cane Mint", price: 0 },
+            { name: "Zomo Swiss Alps + Strong Mint (Super Gelado)", price: 0 },
+            { name: "Nay Doce de Leite c/ Paçoca & Baunilha (Doce)", price: 0 },
+            { name: "Onix High Lemon (Limão Siciliano Ice)", price: 0 }
+          ]
+        },
+        {
+          groupName: "Upgrade no Vaso",
+          required: false,
+          choices: [
+            { name: "Água + Gelo Tradicional (Incluso)", price: 0 },
+            { name: "Vaso com Gelo + Limão Siciliano & Hortelã", price: 8.00 },
+            { name: "Base com Led + Abacaxi / Frutas no Vaso", price: 15.00 }
+          ]
+        }
+      ]
+    },
+    {
+      id: "item-balde-heineken-6",
+      categoryId: "destaques",
+      name: "Balde Imperial c/ 6 Heineken Long Neck 330ml",
+      description: "6 Cervejas Heineken Long Neck 330ml servidas no balde de alumínio Imperial com gelo escama trincando.",
+      price: 79.90,
+      oldPrice: 90.00,
+      costPrice: 37.80,
+      stock: 45,
+      minStock: 10,
+      unit: "balde",
+      featured: true,
+      badge: "Super Pedido",
+      prepTime: "3 min",
+      image: "https://images.unsplash.com/photo-1608270196042-a8690097e270?auto=format&fit=crop&w=800&q=80",
+      options: [
+        {
+          groupName: "Acompanhamento de Copos",
+          required: true,
+          choices: [
+            { name: "Beber na Long Neck + Guardanapos", price: 0 },
+            { name: "Trazer Taças Geladas", price: 0 },
+            { name: "Acompanhar Limão Fatiado", price: 3.00 }
+          ]
+        }
+      ]
+    },
+    {
+      id: "item-tabua-imperador-chapa",
+      categoryId: "destaques",
+      name: "Tábua Imperial Galpão 03 (Picanha + Fritas Cheddar & Bacon)",
+      description: "500g de Tiras de Picanha Maturada grelhada na chapa fumegante com cebola roxa caramelizada, acompanhada de 400g de Batata Frita crocante coberta com Cheddar cremoso, farofa de bacon, pão de alho, vinagrete, farofa temperada e maionese verde da casa.",
+      price: 119.90,
+      oldPrice: 139.90,
+      costPrice: 46.00,
+      stock: 30,
+      minStock: 8,
+      unit: "tábua",
+      featured: true,
+      badge: "Serve 3 a 4 Pessoas",
+      prepTime: "18 min",
+      image: "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=800&q=80",
+      options: [
+        {
+          groupName: "Ponto da Carne",
+          required: true,
+          choices: [
+            { name: "Ao Ponto (Suculenta - Recomendado)", price: 0 },
+            { name: "Mal Passada", price: 0 },
+            { name: "Bem Passada", price: 0 }
+          ]
+        },
+        {
+          groupName: "Adicionais na Tábua",
+          required: false,
+          choices: [
+            { name: "Sem adicional", price: 0 },
+            { name: "+ Porção Extra de Pão de Alho (2 un)", price: 14.00 },
+            { name: "+ Queijo Coalho Dourado com Melaço", price: 18.00 }
+          ]
+        }
+      ]
+    },
+
+    // ==================== 2. TABACARIA & NARGUILÉ (ROSH) ====================
+    {
+      id: "item-sessao-simples",
+      categoryId: "tabacaria",
+      name: "Sessão Narguilé Tradicional (1 Rosh Completo)",
+      description: "Aparelho completo higienizado + 1 Rosh preparado pelo nosso Roshzeiro Master com Kaloud Lotus, 3 carvões de coco hexagonais + 1 troca de carvão e piteira higiênica descartável.",
+      price: 40.00,
+      costPrice: 10.50,
+      stock: 120,
+      minStock: 20,
+      unit: "sessão",
+      featured: true,
+      badge: "Tabacaria Oficial",
+      prepTime: "7 min",
+      image: "https://images.unsplash.com/photo-1527661591475-527312dd65f5?auto=format&fit=crop&w=800&q=80",
+      options: [
+        {
+          groupName: "Perfil do Rosh",
+          required: true,
+          choices: [
+            { name: "Cítrico Gelado (Maracujá + Limão + Menta)", price: 0 },
+            { name: "Frutado Refrescante (Love 66 / Melancia + Melão Ice)", price: 0 },
+            { name: "Tropical Mix (Manga + Maracujá + Abacaxi Ice)", price: 0 },
+            { name: "Doce Cremoso (Cappuccino / Doce de Leite + Baunilha)", price: 0 },
+            { name: "Menta Extrema (Cane Mint + Swiss Alps)", price: 0 },
+            { name: "Tradicional (Duas Maçãs / Uva com Menta)", price: 0 }
+          ]
+        }
+      ]
+    },
+    {
+      id: "item-troca-rosh-avulso",
+      categoryId: "tabacaria",
+      name: "Troca de Rosh Avulso (Reposição na Mesa)",
+      description: "Novo Rosh montado na hora com 3 carvões de coco novos acesos e limpeza do Kaloud. Escolha sua essência favorita (Ziggy, Zomo, Adalya, Nay ou Onix).",
+      price: 28.00,
+      costPrice: 7.50,
+      stock: 150,
+      minStock: 30,
+      unit: "rosh",
+      featured: false,
+      badge: "Reposição Rápida",
+      prepTime: "6 min",
+      image: "https://images.unsplash.com/photo-1510626176961-4b57d4fbad03?auto=format&fit=crop&w=800&q=80",
+      options: [
+        {
+          groupName: "Essência Escolhida",
+          required: true,
+          choices: [
+            { name: "Ziggy - Frutas Amarelas + Menta", price: 0 },
+            { name: "Ziggy - Melancia + Morango Ice", price: 0 },
+            { name: "Adalya - Love 66 Original", price: 0 },
+            { name: "Zomo - Strong Mint + Tangerina", price: 0 },
+            { name: "Nay - Cherry Blend (Cereja Ice)", price: 0 },
+            { name: "Surpresa do Roshzeiro (Mix Especial)", price: 0 }
+          ]
+        }
+      ]
+    },
+    {
+      id: "item-rosh-abacaxi-natural",
+      categoryId: "tabacaria",
+      name: "Sessão Imperial no Rosh de Abacaxi Natural",
+      description: "Experiência exclusiva de camarote: Rosh esculpido na fruta natural (Abacaxi pérola fresco), garantindo fumaça densa, sabor prolongado por até 2h e visual incrível para fotos.",
+      price: 75.00,
+      costPrice: 22.00,
+      stock: 18,
+      minStock: 5,
+      unit: "sessão",
+      featured: true,
+      badge: "Exclusivo VIP",
+      prepTime: "14 min",
+      image: "https://images.unsplash.com/photo-1497534446932-c925b458314e?auto=format&fit=crop&w=800&q=80",
+      options: [
+        {
+          groupName: "Mix da Fruta",
+          required: true,
+          choices: [
+            { name: "Abacaxi + Hortelã + Maracujá Ice", price: 0 },
+            { name: "Piña Colada (Abacaxi + Coco + Menta)", price: 0 },
+            { name: "Tropical Love 66 c/ Toque Gelado", price: 0 }
+          ]
+        }
+      ]
+    },
+    {
+      id: "item-tabacaria-kit-seda-pod",
+      categoryId: "tabacaria",
+      name: "Pod Descartável Ignite V80 / Elfbar (8.000 Puffs)",
+      description: "Pod descartável original lacrado na caixa com QR Code de verificação. Diversos sabores gelados disponíveis na vitrine da tabacaria.",
+      price: 110.00,
+      costPrice: 52.00,
+      stock: 25,
+      minStock: 6,
+      unit: "unid",
+      featured: false,
+      badge: "Tabacaria Shop",
+      prepTime: "2 min",
+      image: "https://images.unsplash.com/photo-1560913210-91e811632701?auto=format&fit=crop&w=800&q=80",
+      options: [
+        {
+          groupName: "Sabor do Pod",
+          required: true,
+          choices: [
+            { name: "Watermelon Ice (Melancia Gelada)", price: 0 },
+            { name: "Icy Mint (Menta Refrescante)", price: 0 },
+            { name: "Strawberry Kiwi (Morango c/ Kiwi)", price: 0 },
+            { name: "Grape Ice (Uva Roxa Gelada)", price: 0 }
+          ]
+        }
+      ]
+    },
+    {
+      id: "item-carvao-extra",
+      categoryId: "tabacaria",
+      name: "Porção Extra de Carvão de Coco Aceso (3 unid)",
+      description: "3 unidades de carvão de coco premium 100% natural já acesos no fogareiro e levados na cesta térmica pelo Roshzeiro.",
+      price: 8.00,
+      costPrice: 1.80,
+      stock: 300,
+      minStock: 50,
+      unit: "porção",
+      featured: false,
+      badge: "Atendimento Mesa",
+      prepTime: "4 min",
+      image: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=800&q=80",
+      options: []
+    },
+
+    // ==================== 3. COMBOS & GARRAFAS VIP ====================
+    {
+      id: "item-combo-tanqueray",
+      categoryId: "combos",
+      name: "Combo Gin Tanqueray London Dry 750ml + 5 Red Bull / Tônicas",
+      description: "1 Garrafa de Gin Tanqueray 750ml lacrada + 5 acompanhamentos à sua escolha (Red Bull ou Água Tônica) + Bandeja de Especiarias (Zimbro, Alecrim, Limão Siciliano e Laranja Bahia) + Taças de Cristal.",
+      price: 349.90,
+      oldPrice: 389.90,
+      costPrice: 145.00,
+      stock: 16,
+      minStock: 4,
+      unit: "combo",
+      featured: true,
+      badge: "Rei do Camarote",
+      prepTime: "5 min",
+      image: "https://images.unsplash.com/photo-1551024709-8f23befc6f87?auto=format&fit=crop&w=800&q=80",
+      options: [
+        {
+          groupName: "Escolha os 5 Energéticos / Tônicas",
+          required: true,
+          choices: [
+            { name: "5x Red Bull Tropical (Amarelo)", price: 0 },
+            { name: "5x Red Bull Melancia (Vermelho)", price: 0 },
+            { name: "3x Red Bull Tropical + 2x Água Tônica Schweppes", price: 0 },
+            { name: "5x Red Bull Tradicional", price: 0 },
+            { name: "5x Red Bull Coco & Açaí (Branco)", price: 0 }
+          ]
+        }
+      ]
+    },
+    {
+      id: "item-combo-old-parr",
+      categoryId: "combos",
+      name: "Combo Whisky Grand Old Parr 12 Anos 1L + 4 Red Bull + 4 Gelos de Coco",
+      description: "1 Garrafa de Whisky Old Parr 12 Anos 1000ml + 4 Latas de Red Bull + 4 Gelos de Água de Coco ou Melancia + Balde Iluminado LED.",
+      price: 369.90,
+      costPrice: 158.00,
+      stock: 14,
+      minStock: 4,
+      unit: "combo",
+      featured: true,
+      badge: "Top Vendas",
+      prepTime: "5 min",
+      image: "https://images.unsplash.com/photo-1527281400683-1aae777175f8?auto=format&fit=crop&w=800&q=80",
+      options: [
+        {
+          groupName: "Sabor do Gelo Formatado",
+          required: true,
+          choices: [
+            { name: "4x Gelo de Água de Coco Original", price: 0 },
+            { name: "4x Gelo de Melancia", price: 0 },
+            { name: "2x Gelo de Coco + 2x Gelo de Maracujá", price: 0 }
+          ]
+        }
+      ]
+    },
+    {
+      id: "item-combo-jack-daniels",
+      categoryId: "combos",
+      name: "Combo Whisky Jack Daniel's Nº7 ou Maçã Verde 1L + 5 Acompanhamentos",
+      description: "1 Garrafa de Jack Daniel's 1L (Tradicional, Apple ou Honey) + 4 Red Bull ou 5 Coca-Cola Lata + 4 Gelos de Coco.",
+      price: 359.90,
+      costPrice: 152.00,
+      stock: 15,
+      minStock: 4,
+      unit: "combo",
+      featured: false,
+      badge: "Clássico Lounge",
+      prepTime: "5 min",
+      image: "https://images.unsplash.com/photo-1569529465841-dfecdab7503b?auto=format&fit=crop&w=800&q=80",
+      options: [
+        {
+          groupName: "Versão do Jack Daniel's",
+          required: true,
+          choices: [
+            { name: "Jack Daniel's Old No. 7 (Tradicional)", price: 0 },
+            { name: "Jack Daniel's Tennessee Apple (Maçã Verde)", price: 0 },
+            { name: "Jack Daniel's Tennessee Honey (Mel)", price: 0 }
+          ]
+        }
+      ]
+    },
+    {
+      id: "item-combo-absolut",
+      categoryId: "combos",
+      name: "Combo Vodka Absolut 1L + 5 Red Bull",
+      description: "1 Garrafa de Vodka Sueca Absolut 1000ml + 5 Latas de Red Bull (sabores à escolha) + Balde de Gelo.",
+      price: 259.90,
+      costPrice: 102.00,
+      stock: 20,
+      minStock: 5,
+      unit: "combo",
+      featured: false,
+      badge: "Custo-Benefício",
+      prepTime: "4 min",
+      image: "https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?auto=format&fit=crop&w=800&q=80",
+      options: []
+    },
+
+    // ==================== 4. DRINKS AUTORAIS & CAIPIRINHAS ====================
+    {
+      id: "item-drink-imperador-gold",
+      categoryId: "drinks",
+      name: "Drink Imperador Gold (Gin, Maracujá, Mel & Espuma de Gengibre)",
+      description: "Drink assinatura da casa: Gin importado, redução artesanal de maracujá com pimenta rosa, toque de limão siciliano, finalizado com espuma aveludada de gengibre e pó dourado comestível.",
+      price: 34.90,
+      costPrice: 9.80,
+      stock: 60,
+      minStock: 10,
+      unit: "taça",
+      featured: true,
+      badge: "Assinatura Imperador",
+      prepTime: "6 min",
+      image: "https://images.unsplash.com/photo-1536935338788-846bb9981813?auto=format&fit=crop&w=800&q=80",
+      options: []
+    },
+    {
+      id: "item-drink-gin-tropical",
+      categoryId: "drinks",
+      name: "Taça Gin Tropical Red Bull (600ml)",
+      description: "Dose dupla de Gin, Red Bull Tropical, fatias de laranja bahia, abacaxi grelhado e zimbro aromático em taça de 600ml.",
+      price: 32.90,
+      costPrice: 10.20,
+      stock: 75,
+      minStock: 15,
+      unit: "taça",
+      featured: true,
+      badge: "Mais Vendido",
+      prepTime: "5 min",
+      image: "https://images.unsplash.com/photo-1551538827-9c037cb4f32a?auto=format&fit=crop&w=800&q=80",
+      options: [
+        {
+          groupName: "Sabor do Red Bull",
+          required: true,
+          choices: [
+            { name: "Red Bull Tropical (Frutas Amarelas)", price: 0 },
+            { name: "Red Bull Melancia (Frutas Vermelhas)", price: 0 },
+            { name: "Red Bull Pêssego & Morango", price: 0 },
+            { name: "Red Bull Coco & Açaí", price: 0 }
+          ]
+        }
+      ]
+    },
+    {
+      id: "item-moscow-mule",
+      categoryId: "drinks",
+      name: "Moscow Mule Imperial na Caneca de Cobre",
+      description: "Vodka Absolut, xarope artesanal de gengibre fresco, suco de limão taiti espremido na hora e espuma cremosa cítrica de gengibre servida na caneca de cobre gelada.",
+      price: 31.90,
+      costPrice: 8.50,
+      stock: 50,
+      minStock: 10,
+      unit: "caneca",
+      featured: false,
+      badge: "Clássico",
+      prepTime: "5 min",
+      image: "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&w=800&q=80",
+      options: []
+    },
+    {
+      id: "item-caipiroska-imperial",
+      categoryId: "drinks",
+      name: "Caipiroska / Caipirinha Gourmet (500ml c/ Picolé)",
+      description: "Frutas frescas maceradas na hora com escolha da base alcoólica e acompanhada de picolé de fruta mergulhado no copo.",
+      price: 29.90,
+      costPrice: 8.20,
+      stock: 65,
+      minStock: 10,
+      unit: "copo",
+      featured: true,
+      badge: "C/ Picolé",
+      prepTime: "6 min",
+      image: "https://images.unsplash.com/photo-1560512823-829485b8bf24?auto=format&fit=crop&w=800&q=80",
+      options: [
+        {
+          groupName: "Fruta da Caipirinha",
+          required: true,
+          choices: [
+            { name: "Morango c/ Maracujá", price: 0 },
+            { name: "Frutas Vermelhas (Morango, Amora e Framboesa)", price: 0 },
+            { name: "Kiwi c/ Limão Taiti", price: 0 },
+            { name: "Abacaxi c/ Hortelã", price: 0 },
+            { name: "Limão Siciliano & Taiti Tradicional", price: 0 }
+          ]
+        },
+        {
+          groupName: "Base Alcoólica",
+          required: true,
+          choices: [
+            { name: "Vodka Smirnoff", price: 0 },
+            { name: "Cachaça Artesanal Ouro / Prata", price: 0 },
+            { name: "Saquê Importado", price: 2.00 },
+            { name: "Vodka Absolut (+R$ 6,00)", price: 6.00 }
+          ]
+        }
+      ]
+    },
+
+    // ==================== 5. CERVEJAS, BALDES & ENERGÉTICOS ====================
+    {
+      id: "item-balde-corona-6",
+      categoryId: "cervejas",
+      name: "Balde c/ 6 Corona Extra Long Neck 330ml + Limão",
+      description: "6 Cervejas Corona Extra 330ml trincando no balde com gelo e gomos de limão taiti para colocar no gargalo.",
+      price: 84.90,
+      costPrice: 41.40,
+      stock: 35,
+      minStock: 8,
+      unit: "balde",
+      featured: false,
+      badge: "Com Limão",
+      prepTime: "3 min",
+      image: "https://images.unsplash.com/photo-1608270196042-a8690097e270?auto=format&fit=crop&w=800&q=80",
+      options: []
+    },
+    {
+      id: "item-heineken-avulsa",
+      categoryId: "cervejas",
+      name: "Cerveja Heineken Long Neck 330ml (Unidade)",
+      description: "Long neck 330ml estupidamente gelada.",
+      price: 14.90,
+      costPrice: 6.30,
+      stock: 240,
+      minStock: 48,
+      unit: "unid",
+      featured: false,
+      badge: "Trincando",
+      prepTime: "2 min",
+      image: "https://images.unsplash.com/photo-1618885472179-5e474019f2a9?auto=format&fit=crop&w=800&q=80",
+      options: []
+    },
+    {
+      id: "item-cerveja-original-600",
+      categoryId: "cervejas",
+      name: "Cerveja Original Garrafa 600ml (Na Camisinha Térmica)",
+      description: "Cerveja Pilsen Original 600ml servida na camisinha térmica a -3°C com copos americanos gelados.",
+      price: 19.90,
+      costPrice: 8.50,
+      stock: 96,
+      minStock: 24,
+      unit: "garrafa",
+      featured: false,
+      badge: "600ml",
+      prepTime: "2 min",
+      image: "https://images.unsplash.com/photo-1535958636474-b021ee887b13?auto=format&fit=crop&w=800&q=80",
+      options: []
+    },
+    {
+      id: "item-redbull-lata",
+      categoryId: "cervejas",
+      name: "Energético Red Bull Lata 250ml (Todos os Sabores)",
+      description: "Lata 250ml gelada: Tradicional, Tropical, Melancia, Coco & Açaí, Pêssego ou Sugarfree.",
+      price: 18.00,
+      costPrice: 6.90,
+      stock: 180,
+      minStock: 36,
+      unit: "lata",
+      featured: false,
+      badge: "Energia",
+      prepTime: "2 min",
+      image: "https://images.unsplash.com/photo-1622543925917-763c34d1a86e?auto=format&fit=crop&w=800&q=80",
+      options: [
+        {
+          groupName: "Sabor do Red Bull",
+          required: true,
+          choices: [
+            { name: "Tradicional Energy Drink", price: 0 },
+            { name: "Tropical Edition (Amarelo)", price: 0 },
+            { name: "Melancia Red Edition", price: 0 },
+            { name: "Coco & Açaí White Edition", price: 0 },
+            { name: "Sugarfree (Zero Açúcar)", price: 0 }
+          ]
+        }
+      ]
+    },
+
+    // ==================== 6. PORÇÕES, CHAPAS & PETISCOS ====================
+    {
+      id: "item-batata-suprema",
+      categoryId: "porcoes",
+      name: "Batata Frita Suprema Galpão 03 (Cheddar Cremoso & Bacon)",
+      description: "500g de batatas fritas corte crinkle/palito super crocantes por fora e macias por dentro, generosamente cobertas com molho cheddar inglês derretido, cubos de bacon defumado e cebolinha fresca.",
+      price: 48.90,
+      costPrice: 15.20,
+      stock: 55,
+      minStock: 10,
+      unit: "porção",
+      featured: true,
+      badge: "Clássico do Lounge",
+      prepTime: "12 min",
+      image: "https://images.unsplash.com/photo-1576107232684-1279f3908594?auto=format&fit=crop&w=800&q=80",
+      options: [
+        {
+          groupName: "Preferência de Molho",
+          required: true,
+          choices: [
+            { name: "Cheddar Cremoso + Bacon (Tradicional)", price: 0 },
+            { name: "Catupiry Original Gratinado + Bacon", price: 4.00 },
+            { name: "Molho à Parte em Potinhos", price: 0 }
+          ]
+        }
+      ]
+    },
+    {
+      id: "item-coxinha-sem-massa",
+      categoryId: "porcoes",
+      name: "Porção de Mini Coxinhas Cremosas Sem Massa c/ Catupiry (10 un)",
+      description: "10 unidades de coxinhas artesanais feitas com puro frango desfiado temperado e Catupiry, empanadas na farinha Panko dourada. Acompanha maionese temperada e geleia de pimenta.",
+      price: 44.90,
+      costPrice: 14.00,
+      stock: 40,
+      minStock: 10,
+      unit: "porção",
+      featured: true,
+      badge: "Imperdível",
+      prepTime: "12 min",
+      image: "https://images.unsplash.com/photo-1626082927389-6cd097cdc6ec?auto=format&fit=crop&w=800&q=80",
+      options: []
+    },
+    {
+      id: "item-file-gorgonzola",
+      categoryId: "porcoes",
+      name: "Filé Mignon na Chapa ao Molho Gorgonzola c/ Pão de Alho",
+      description: "450g de tiras de Filé Mignon salteadas na manteiga de garrafa, cobertas com fonduta cremosa de queijo gorgonzola e servidas com torradas de pão de alho crocante.",
+      price: 89.90,
+      costPrice: 34.00,
+      stock: 25,
+      minStock: 6,
+      unit: "porção",
+      featured: false,
+      badge: "Gastronomia VIP",
+      prepTime: "16 min",
+      image: "https://images.unsplash.com/photo-1600891964092-4316c288032e?auto=format&fit=crop&w=800&q=80",
+      options: []
+    },
+    {
+      id: "item-dadinho-tapioca",
+      categoryId: "porcoes",
+      name: "Dadinhos de Tapioca c/ Queijo Coalho & Geleia de Pimenta (12 un)",
+      description: "12 cubos dourados de tapioca granulada com queijo coalho nordestino, acompanhados de geleia artesanal de pimenta biquinho e melaço de cana.",
+      price: 39.90,
+      costPrice: 11.50,
+      stock: 42,
+      minStock: 8,
+      unit: "porção",
+      featured: false,
+      badge: "Vegetariano",
+      prepTime: "10 min",
+      image: "https://images.unsplash.com/photo-1541592106381-b31e9677c0e5?auto=format&fit=crop&w=800&q=80",
+      options: []
+    },
+    {
+      id: "item-isca-frango-crocante",
+      categoryId: "porcoes",
+      name: "Iscas de Frango Supreme Empanadas na Panko + Molho Honey Mustard",
+      description: "500g de tiras de filé de peito de frango marinadas em especiarias e empanadas na farinha japonesa Panko super crocante. Acompanha molho mostarda e mel e barbecue.",
+      price: 49.90,
+      costPrice: 15.80,
+      stock: 38,
+      minStock: 8,
+      unit: "porção",
+      featured: false,
+      badge: "Super Crocante",
+      prepTime: "13 min",
+      image: "https://images.unsplash.com/photo-1562967914-608f82629710?auto=format&fit=crop&w=800&q=80",
+      options: []
+    },
+
+    // ==================== 7. BURGERS & LANCHES ARTESANAIS ====================
+    {
+      id: "item-burger-imperador-duplo",
+      categoryId: "burgers",
+      name: "Burger Imperador Duplo Smash Bacon + Fritas Individual",
+      description: "Pão brioche selado na manteiga, 2 blends bovinos de 100g cada na grelha, quádruplo queijo cheddar inglês, fatias de bacon crocante, cebola crispy, picles artesanal e molho especial Imperador. Acompanha porção individual de fritas.",
+      price: 42.90,
+      costPrice: 14.50,
+      stock: 40,
+      minStock: 8,
+      unit: "combo",
+      featured: true,
+      badge: "Acompanha Fritas",
+      prepTime: "14 min",
+      image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=800&q=80",
+      options: [
+        {
+          groupName: "Ponto do Burger",
+          required: true,
+          choices: [
+            { name: "Ao Ponto Suculento", price: 0 },
+            { name: "Bem Passado", price: 0 }
+          ]
+        }
+      ]
+    },
+
+    // ==================== 8. SOBREMESAS & SEM ÁLCOOL ====================
+    {
+      id: "item-petit-gateau",
+      categoryId: "sobremesas",
+      name: "Petit Gâteau Imperial c/ Sorvete de Creme & Calda de Nutella",
+      description: "Bolinho quente de chocolate meio amargo belga com interior cremoso, servido com bola de sorvete de baunilha, morangos frescos e fio de Nutella.",
+      price: 28.90,
+      costPrice: 8.90,
+      stock: 30,
+      minStock: 6,
+      unit: "unid",
+      featured: false,
+      badge: "Sobremesa",
+      prepTime: "9 min",
+      image: "https://images.unsplash.com/photo-1624353365286-3f8d62daad51?auto=format&fit=crop&w=800&q=80",
+      options: []
+    },
+    {
+      id: "item-soda-italiana",
+      categoryId: "sobremesas",
+      name: "Soda Italiana Artesanal 500ml (Sem Álcool)",
+      description: "Xarope francês Monin importado, água com gás super gelada, gelo cristal e frutas frescas.",
+      price: 18.90,
+      costPrice: 4.50,
+      stock: 80,
+      minStock: 15,
+      unit: "taça",
+      featured: false,
+      badge: "Zero Álcool",
+      prepTime: "4 min",
+      image: "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&w=800&q=80",
+      options: [
+        {
+          groupName: "Sabor Monin",
+          required: true,
+          choices: [
+            { name: "Maçã Verde (Green Apple)", price: 0 },
+            { name: "Frutas Vermelhas (Cranberry & Morango)", price: 0 },
+            { name: "Curaçau Blue c/ Limão Siciliano", price: 0 },
+            { name: "Pêssego Imperial", price: 0 }
+          ]
+        }
+      ]
+    },
+    {
+      id: "item-agua-refri",
+      categoryId: "sobremesas",
+      name: "Refrigerante Lata 350ml / Água Mineral 500ml",
+      description: "Coca-Cola Normal, Coca-Cola Zero, Guaraná Antarctica, Água Tônica Schweppes ou Água Mineral com/sem gás.",
+      price: 8.50,
+      costPrice: 2.60,
+      stock: 200,
+      minStock: 40,
+      unit: "unid",
+      featured: false,
+      badge: "Gelado",
+      prepTime: "2 min",
+      image: "https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&w=800&q=80",
+      options: [
+        {
+          groupName: "Escolha a Bebida",
+          required: true,
+          choices: [
+            { name: "Coca-Cola Original Lata 350ml", price: 0 },
+            { name: "Coca-Cola Zero Lata 350ml", price: 0 },
+            { name: "Guaraná Antarctica Lata 350ml", price: 0 },
+            { name: "Água Mineral Sem Gás 500ml", price: -1.50 },
+            { name: "Água Mineral Com Gás 500ml", price: -1.00 }
+          ]
+        }
+      ]
+    }
+  ],
+
+  tables: [
+    { id: "Mesa 01", name: "Mesa 01 (Deck Entrada)", area: "Deck Lounge", capacity: 4, status: "ocupada" },
+    { id: "Mesa 02", name: "Mesa 02 (Deck Entrada)", area: "Deck Lounge", capacity: 4, status: "ocupada" },
+    { id: "Mesa 03", name: "Mesa 03 (Salão Principal)", area: "Salão Central", capacity: 4, status: "livre" },
+    { id: "Mesa 04", name: "Mesa 04 (Salão Principal)", area: "Salão Central", capacity: 6, status: "ocupada" },
+    { id: "Mesa 05", name: "Mesa 05 (Salão Principal)", area: "Salão Central", capacity: 4, status: "livre" },
+    { id: "Mesa 06", name: "Mesa 06 (Salão Principal)", area: "Salão Central", capacity: 4, status: "livre" },
+    { id: "Mesa 07", name: "Mesa 07 (Próximo ao DJ)", area: "Pista & DJ", capacity: 6, status: "ocupada" },
+    { id: "Mesa 08", name: "Mesa 08 (Próximo ao DJ)", area: "Pista & DJ", capacity: 4, status: "livre" },
+    { id: "Camarote 01", name: "Camarote Imperial 01", area: "Área VIP", capacity: 10, status: "ocupada" },
+    { id: "Camarote 02", name: "Camarote Imperial 02", area: "Área VIP", capacity: 10, status: "ocupada" },
+    { id: "Camarote 03", name: "Camarote Imperial 03", area: "Área VIP", capacity: 8, status: "livre" },
+    { id: "Balcão Bar", name: "Balcão / Venda Rápida", area: "Bar Central", capacity: 8, status: "livre" }
+  ],
+
+  waiterCalls: [
+    {
+      id: "call-101",
+      tableId: "Camarote 01",
+      type: "carvao",
+      message: "Trocar Carvão do Narguilé (Rosh Love 66)",
+      createdAt: "21:42",
+      status: "pendente"
+    },
+    {
+      id: "call-102",
+      tableId: "Mesa 02",
+      type: "garcom",
+      message: "Cliente solicitou atendimento / balde de gelo extra",
+      createdAt: "21:48",
+      status: "pendente"
+    }
+  ],
+
+  orders: [
+    {
+      id: "PED-9041",
+      tableId: "Camarote 01",
+      customerName: "Lucas & Grupo VIP",
+      source: "Tablet Mesa (PIX QR Code)",
+      paymentMethod: "PIX QR Code",
+      paymentStatus: "pago",
+      orderStatus: "entregue",
+      createdAt: "2026-11-06 19:35",
+      subtotal: 494.70,
+      serviceFee: 49.47,
+      total: 544.17,
+      costTotal: 197.50,
+      items: [
+        { itemId: "item-combo-tanqueray", name: "Combo Gin Tanqueray London Dry 750ml + 5 Red Bull / Tônicas", qty: 1, price: 349.90, costPrice: 145.00, notes: "5x Red Bull Tropical" },
+        { itemId: "item-rosh-abacaxi-natural", name: "Sessão Imperial no Rosh de Abacaxi Natural", qty: 1, price: 75.00, costPrice: 22.00, notes: "Abacaxi + Hortelã + Maracujá Ice" },
+        { itemId: "item-rosh-imperial-double", name: "Double Sessão Narguilé Imperial (2 Roshs)", qty: 1, price: 69.80, costPrice: 30.50, notes: "Adalya Love 66" }
+      ]
+    },
+    {
+      id: "PED-9042",
+      tableId: "Mesa 01",
+      customerName: "Matheus Silva",
+      source: "Cardápio QR Code (Tagme)",
+      paymentMethod: "PIX QR Code",
+      paymentStatus: "pago",
+      orderStatus: "entregue",
+      createdAt: "2026-11-06 20:10",
+      subtotal: 239.70,
+      serviceFee: 23.97,
+      total: 263.67,
+      costTotal: 102.30,
+      items: [
+        { itemId: "item-balde-heineken-6", name: "Balde Imperial c/ 6 Heineken Long Neck 330ml", qty: 1, price: 79.90, costPrice: 37.80, notes: "Trazer Taças Geladas" },
+        { itemId: "item-tabua-imperador-chapa", name: "Tábua Imperial Galpão 03 (Picanha + Fritas Cheddar & Bacon)", qty: 1, price: 119.90, costPrice: 46.00, notes: "Ao Ponto Suculenta" },
+        { itemId: "item-sessao-simples", name: "Sessão Narguilé Tradicional (1 Rosh Completo)", qty: 1, price: 40.00, costPrice: 18.50, notes: "Cítrico Gelado (Maracujá + Limão + Menta)" }
+      ]
+    },
+    {
+      id: "PED-9043",
+      tableId: "Camarote 02",
+      customerName: "Fernanda Oliveira",
+      source: "Tablet Mesa (PIX QR Code)",
+      paymentMethod: "PIX QR Code",
+      paymentStatus: "pago",
+      orderStatus: "entregue",
+      createdAt: "2026-11-06 20:45",
+      subtotal: 523.60,
+      serviceFee: 52.36,
+      total: 575.96,
+      costTotal: 205.80,
+      items: [
+        { itemId: "item-combo-old-parr", name: "Combo Whisky Grand Old Parr 12 Anos 1L + 4 Red Bull + 4 Gelos de Coco", qty: 1, price: 369.90, costPrice: 158.00, notes: "4x Gelo de Água de Coco Original" },
+        { itemId: "item-batata-suprema", name: "Batata Frita Suprema Galpão 03 (Cheddar Cremoso & Bacon)", qty: 1, price: 48.90, costPrice: 15.20, notes: "Cheddar + Bacon" },
+        { itemId: "item-coxinha-sem-massa", name: "Porção de Mini Coxinhas Cremosas Sem Massa c/ Catupiry (10 un)", qty: 1, price: 44.90, costPrice: 14.00, notes: "" },
+        { itemId: "item-caipiroska-imperial", name: "Caipiroska / Caipirinha Gourmet (500ml c/ Picolé)", qty: 2, price: 29.95, costPrice: 9.30, notes: "Morango c/ Maracujá (Vodka)" }
+      ]
+    },
+    {
+      id: "PED-9044",
+      tableId: "Mesa 04",
+      customerName: "Gabriel & Amigos",
+      source: "PDV / Comanda Mesa",
+      paymentMethod: "Cartão de Crédito",
+      paymentStatus: "pago",
+      orderStatus: "entregue",
+      createdAt: "2026-11-06 21:05",
+      subtotal: 294.60,
+      serviceFee: 29.46,
+      total: 324.06,
+      costTotal: 112.10,
+      items: [
+        { itemId: "item-rosh-imperial-double", name: "Double Sessão Narguilé Imperial (2 Roshs)", qty: 1, price: 69.90, costPrice: 18.50, notes: "Ziggy Tropical Ice" },
+        { itemId: "item-file-gorgonzola", name: "Filé Mignon na Chapa ao Molho Gorgonzola c/ Pão de Alho", qty: 1, price: 89.90, costPrice: 34.00, notes: "" },
+        { itemId: "item-drink-imperador-gold", name: "Drink Imperador Gold (Gin, Maracujá, Mel & Espuma de Gengibre)", qty: 2, price: 34.90, costPrice: 9.80, notes: "" },
+        { itemId: "item-drink-gin-tropical", name: "Taça Gin Tropical Red Bull (600ml)", qty: 2, price: 32.50, costPrice: 20.00, notes: "Red Bull Melancia" }
+      ]
+    },
+    {
+      id: "PED-9045",
+      tableId: "Mesa 07",
+      customerName: "Rafael Costa",
+      source: "Tablet Mesa (PIX QR Code)",
+      paymentMethod: "PIX QR Code",
+      paymentStatus: "pago",
+      orderStatus: "preparando",
+      createdAt: "2026-11-06 21:35",
+      subtotal: 263.80,
+      serviceFee: 26.38,
+      total: 290.18,
+      costTotal: 112.90,
+      items: [
+        { itemId: "item-tabacaria-kit-seda-pod", name: "Pod Descartável Ignite V80 / Elfbar (8.000 Puffs)", qty: 1, price: 110.00, costPrice: 52.00, notes: "Watermelon Ice (Melancia Gelada)" },
+        { itemId: "item-balde-corona-6", name: "Balde c/ 6 Corona Extra Long Neck 330ml + Limão", qty: 1, price: 84.90, costPrice: 41.40, notes: "Com Limão no gargalo" },
+        { itemId: "item-rosh-imperial-double", name: "Double Sessão Narguilé Imperial (2 Roshs)", qty: 1, price: 68.90, costPrice: 19.50, notes: "Zomo Swiss Alps + Strong Mint" }
+      ]
+    },
+    {
+      id: "PED-9046",
+      tableId: "Mesa 02",
+      customerName: "Amanda Souza",
+      source: "Cardápio QR Code (Tagme)",
+      paymentMethod: "Aberto na Comanda",
+      paymentStatus: "aberto",
+      orderStatus: "novo",
+      createdAt: "2026-11-06 21:50",
+      subtotal: 132.70,
+      serviceFee: 13.27,
+      total: 145.97,
+      costTotal: 44.20,
+      items: [
+        { itemId: "item-burger-imperador-duplo", name: "Burger Imperador Duplo Smash Bacon + Fritas Individual", qty: 2, price: 42.90, costPrice: 14.50, notes: "Ao Ponto Suculento" },
+        { itemId: "item-dadinho-tapioca", name: "Dadinhos de Tapioca c/ Queijo Coalho & Geleia de Pimenta (12 un)", qty: 1, price: 39.90, costPrice: 11.50, notes: "" },
+        { itemId: "item-carvao-extra", name: "Porção Extra de Carvão de Coco Aceso (3 unid)", qty: 1, price: 7.00, costPrice: 3.70, notes: "" }
+      ]
+    }
+  ],
+
+  // TUDO QUE COMPRAR (Compras de Mercadorias, Bebidas, Tabacaria e Insumos)
+  purchases: [
+    {
+      id: "COMP-301",
+      date: "2026-11-02",
+      supplier: "Distribuidora Imperial Bebidas & Destilados",
+      category: "Bebidas & Destilados",
+      description: "Caixas de Heineken Long Neck, Corona, Gin Tanqueray, Whisky Old Parr 12 e Jack Daniel's",
+      qty: 12,
+      unit: "lotes/cx",
+      totalCost: 1850.00,
+      paymentMethod: "PIX Fornecedor",
+      status: "pago"
+    },
+    {
+      id: "COMP-302",
+      date: "2026-11-03",
+      supplier: "Atacado Tabacaria Sultan & Essências Brasil",
+      category: "Tabacaria & Narguilé",
+      description: "Packs de Essências Ziggy, Adalya Love 66, Zomo, Nay, 30kg Carvão de Coco Hexagonal, Alumínio e Piteiras",
+      qty: 8,
+      unit: "packs",
+      totalCost: 940.00,
+      paymentMethod: "PIX Fornecedor",
+      status: "pago"
+    },
+    {
+      id: "COMP-303",
+      date: "2026-11-04",
+      supplier: "Frigorífico Prime & Hortifruti Central",
+      category: "Cozinha & Carnes",
+      description: "Peças de Picanha Maturada, Filé Mignon, Batata Congelada Crinkle, Bacon Defumado, Queijo Cheddar e Frutas p/ Drinks",
+      qty: 1,
+      unit: "compra semanal",
+      totalCost: 1120.00,
+      paymentMethod: "Cartão Corporativo",
+      status: "pago"
+    },
+    {
+      id: "COMP-304",
+      date: "2026-11-05",
+      supplier: "Red Bull Brasil Distribuição Direta",
+      category: "Energéticos & Gelo",
+      description: "10 Fardos Red Bull (Tradicional, Tropical, Melancia e Coco) + 200 unid Gelo de Água de Coco",
+      qty: 10,
+      unit: "fardos",
+      totalCost: 780.00,
+      paymentMethod: "Boleto / PIX",
+      status: "pago"
+    }
+  ],
+
+  // FUNCIONÁRIOS & EQUIPE DO LOUNGE
+  employees: [
+    {
+      id: "FUNC-01",
+      name: "Carlos Eduardo (Cadu)",
+      role: "Gerente Geral & Caixa",
+      shift: "Terça a Domingo (16h - 03h)",
+      phone: "(11) 99812-4410",
+      baseSalary: 2800.00,
+      bonuses: 350.00,
+      advances: 0.00,
+      paymentType: "Mensalista",
+      status: "ativo",
+      paidThisMonth: true
+    },
+    {
+      id: "FUNC-02",
+      name: "Matheus 'Sheik' Rocha",
+      role: "Roshzeiro Master (Tabacaria & Narguilé)",
+      shift: "Terça a Domingo (18h - 04h)",
+      phone: "(11) 99741-8821",
+      baseSalary: 2100.00,
+      bonuses: 420.00,
+      advances: 150.00,
+      paymentType: "Fixo + Comissão Rosh",
+      status: "ativo",
+      paidThisMonth: true
+    },
+    {
+      id: "FUNC-03",
+      name: "Leonardo Mixologista",
+      role: "Bartender Chefe (Drinks & Combos)",
+      shift: "Quarta a Domingo (18h - 04h)",
+      phone: "(11) 99104-3390",
+      baseSalary: 2200.00,
+      bonuses: 380.00,
+      advances: 0.00,
+      paymentType: "Fixo + 10% Bar",
+      status: "ativo",
+      paidThisMonth: true
+    },
+    {
+      id: "FUNC-04",
+      name: "Dona Márcia Gourmet",
+      role: "Chef de Cozinha (Chapas & Porções)",
+      shift: "Terça a Domingo (17h - 02h)",
+      phone: "(11) 98822-1190",
+      baseSalary: 2400.00,
+      bonuses: 250.00,
+      advances: 200.00,
+      paymentType: "Mensalista",
+      status: "ativo",
+      paidThisMonth: true
+    },
+    {
+      id: "FUNC-05",
+      name: "Bruno Atendimento VIP",
+      role: "Garçom Camarotes & Salão",
+      shift: "Quinta a Domingo (18h - 04h)",
+      phone: "(11) 99451-6700",
+      baseSalary: 1650.00,
+      bonuses: 490.00,
+      advances: 100.00,
+      paymentType: "Fixo + Gorjeta 10%",
+      status: "ativo",
+      paidThisMonth: true
+    },
+    {
+      id: "FUNC-06",
+      name: "Marcos Segurança",
+      role: "Segurança & Recepção Portaria",
+      shift: "Sexta a Domingo (19h - 04h)",
+      phone: "(11) 99311-0092",
+      baseSalary: 1400.00,
+      bonuses: 0.00,
+      advances: 0.00,
+      paymentType: "Diária / Fim de Semana",
+      status: "ativo",
+      paidThisMonth: false
+    }
+  ],
+
+  // GASTOS FIXOS & CUSTOS OPERACIONAIS DO MÊS
+  fixedExpenses: [
+    {
+      id: "FIX-01",
+      name: "Aluguel do Galpão / Ponto Comercial Imperador",
+      category: "Infraestrutura",
+      dueDate: "Dia 10",
+      amount: 3500.00,
+      status: "pago",
+      notes: "Contrato Comercial Salão + Deck"
+    },
+    {
+      id: "FIX-02",
+      name: "Energia Elétrica Trifásica (Cervejeiras, Ar, Som & Iluminação LED)",
+      category: "Utilidades",
+      dueDate: "Dia 15",
+      amount: 1180.00,
+      status: "pago",
+      notes: "Fatura mensal"
+    },
+    {
+      id: "FIX-03",
+      name: "Água, Esgoto & Gás Industrial Cozinha",
+      category: "Utilidades",
+      dueDate: "Dia 18",
+      amount: 460.00,
+      status: "pago",
+      notes: "Sabesp + Recarga cilindro GLP P45"
+    },
+    {
+      id: "FIX-04",
+      name: "Internet Fibra 1Gbps Dedicada (Wi-Fi Clientes + Tablets PIX)",
+      category: "Tecnologia",
+      dueDate: "Dia 20",
+      amount: 199.90,
+      status: "pago",
+      notes: "Link principal + roteador Mesh"
+    },
+    {
+      id: "FIX-05",
+      name: "Contabilidade, Alvará & Taxas Municipais",
+      category: "Jurídico & Contábil",
+      dueDate: "Dia 25",
+      amount: 450.00,
+      status: "pendente",
+      notes: "Honorários contábeis + Simples Nacional"
+    },
+    {
+      id: "FIX-06",
+      name: "Marketing Instagram (@imperadorloungebar) & Fotógrafo Fim de Semana",
+      category: "Marketing & Eventos",
+      dueDate: "Dia 05",
+      amount: 600.00,
+      status: "pago",
+      notes: "Tráfego pago regional + Reels do Lounge"
+    }
+  ],
+
+  // HISTÓRICO DE FATURAMENTO SEMANAL / MENSAL (Para o DRE mostrar o lucro real do mês + as vendas ao vivo)
+  historicalRevenueAdjustment: {
+    previousDaysRevenue: 24850.00,
+    previousDaysOrdersCount: 142,
+    previousDaysPixTotal: 16400.00,
+    previousDaysCardTotal: 6950.00,
+    previousDaysCashTotal: 1500.00,
+    note: "Faturamento acumulado dos dias anteriores do mês vigente (editável no painel Financeiro)"
+  }
+};
+

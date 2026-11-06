@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IMPERADOR LOUNGE BAR | Cardápio Digital (Tagme Style), Tablet PIX & ERP Completo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- BARRA SUPERIOR DE NAVEGAÇÃO ENTRE OS 3 AMBIENTES DO SISTEMA -->
+  <header class="system-switcher-bar">
+    <div class="switcher-brand">
+      <div class="crown-badge">👑</div>
+      <div class="switcher-brand-text">
+        <h1 id="topBrandTitle">IMPERADOR LOUNGE BAR</h1>
+        <span>Sistema Unificado: Cardápio Tagme (Galpão 03) • Tablet PIX • ERP Admin</span>
+      </div>
+    </div>
+
+    <nav class="mode-pills" aria-label="Alternar modo do sistema">
+      <button class="mode-pill active" id="btnModeMenu" onclick="ImperadorApp.setViewMode('menu')">
+        📱 Cardápio Digital (Tagme / QR)
+      </button>
+      <button class="mode-pill" id="btnModeTablet" onclick="ImperadorApp.setViewMode('tablet')">
+        🖥️ Tablet Moderno (Mesa + PIX)
+      </button>
+      <button class="mode-pill" id="btnModeAdmin" onclick="ImperadorApp.setViewMode('admin')">
+        👑 Administrador & ERP Completo
+      </button>
+    </nav>
+
+    <div class="switcher-status">
+      <div class="table-selector-pill" title="Mesa ativa para pedidos no Cardápio ou Tablet">
+        <span>📍 Mesa:</span>
+        <select id="globalTableSelect" onchange="ImperadorApp.setSelectedTable(this.value)"></select>
+      </div>
+      <div class="live-sync-dot" id="syncStatusIndicator">Online • Sincronizado</div>
+    </div>
+  </header>
+
+  <!-- CONTAINER DE NOTIFICAÇÕES TOAST -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- ÁREA PRINCIPAL RENDERIZADA DINAMICAMENTE -->
+  <main id="appRoot"></main>
+
+  <!-- MODAL UNIVERSAL (PERSONALIZAR ITEM / CHECKOUT PIX QR CODE / FORMULÁRIOS ADMIN) -->
+  <div id="modalContainer" style="display: none;"></div>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
+
