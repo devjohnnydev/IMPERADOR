@@ -50,14 +50,57 @@ const ImperadorApp = (() => {
     }, 3600);
   }
 
-  // Gerador de Payload PIX (Padrão EMVCo BRCode) + Matriz QR Code SVG Nítida
+  // Cálculo oficial CRC16-CCITT (0xFFFF, polinômio 0x1021) igual ao módulo Python pix_qrcode.py
+  function computeCRC16CCITT(str) {
+    let crc = 0xFFFF;
+    const poly = 0x1021;
+    for (let i = 0; i < str.length; i++) {
+      crc ^= (str.charCodeAt(i) << 8);
+      for (let b = 0; b < 8; b++) {
+        if ((crc & 0x8000) !== 0) {
+          crc = ((crc << 1) ^ poly) & 0xFFFF;
+        } else {
+          crc = (crc << 1) & 0xFFFF;
+        }
+      }
+    }
+    return crc.toString(16).toUpperCase().padStart(4, '0');
+  }
+
+  function formatTLV(id, val) {
+    const s = String(val);
+    return `${id}${String(s.length).padStart(2, '0')}${s}`;
+  }
+
+  // Gerador de Payload PIX (Padrão EMVCo BRCode c/ CRC16-CCITT real) + Matriz QR Code SVG Nítida
   function generatePixPayload(amount) {
     const key = (state.settings.pixKey || 'pix@imperadorloungebar.com.br').trim();
-    const merchant = (state.settings.pixMerchantName || 'IMPERADOR LOUNGE BAR').substring(0, 25).toUpperCase();
-    const city = (state.settings.pixMerchantCity || 'SAO PAULO').substring(0, 15).toUpperCase();
+    const merchant = (state.settings.pixMerchantName || 'IMPERADOR LOUNGE BAR')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^A-Za-z0-9 /\-.]/g, '')
+      .substring(0, 25).toUpperCase() || 'IMPERADOR LOUNGE BAR';
+    const city = (state.settings.pixMerchantCity || 'SAO PAULO')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^A-Za-z0-9 /\-.]/g, '')
+      .substring(0, 15).toUpperCase() || 'SAO PAULO';
     const valStr = Number(amount || 0).toFixed(2);
-    const txId = 'IMP' + Math.floor(100000 + Math.random() * 900000);
-    return `00020126580014BR.GOV.BCB.PIX01${String(key.length).padStart(2, '0')}${key}52040000530398654${String(valStr.length).padStart(2, '0')}${valStr}5802BR59${String(merchant.length).padStart(2, '0')}${merchant}60${String(city.length).padStart(2, '0')}${city}62110507${txId}6304ABCD`;
+    const txId = 'IMPERADOR03';
+
+    const pfi = formatTLV('00', '01');
+    const gui = formatTLV('00', 'br.gov.bcb.pix');
+    const keyTlv = formatTLV('01', key);
+    const mai = formatTLV('26', `${gui}${keyTlv}`);
+    const mcc = formatTLV('52', '0000');
+    const curr = formatTLV('53', '986');
+    const amtTlv = Number(amount) > 0 ? formatTLV('54', valStr) : '';
+    const country = formatTLV('58', 'BR');
+    const nameTlv = formatTLV('59', merchant);
+    const cityTlv = formatTLV('60', city);
+    const addData = formatTLV('62', formatTLV('05', txId));
+
+    const partial = `${pfi}${mai}${mcc}${curr}${amtTlv}${country}${nameTlv}${cityTlv}${addData}6304`;
+    const crcHex = computeCRC16CCITT(partial);
+    return `${partial}${crcHex}`;
   }
 
   // Renderizador determinístico de QR Code em SVG (funciona 100% offline e online)
@@ -231,7 +274,7 @@ const ImperadorApp = (() => {
       console.warn('LocalStorage indisponível:', e);
     }
 
-    // 2. Tenta sincronizar com o servidor Node (/api/state)
+    // 2. Tenta sincronizar com o servidor Python (app.py -> /api/state)
     try {
       const res = await fetch('/api/state');
       if (res.ok) {
@@ -239,8 +282,9 @@ const ImperadorApp = (() => {
         if (data && data.ok && data.state && data.state.menuItems) {
           state = data.state;
           localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+          const syncEl = document.getElementById('syncStatusIndicator');
+          if (syncEl) syncEl.textContent = (data.engine || 'Python + SQLite3') + ' • Online';
         } else {
-          // Inicializa o banco do servidor com o estado atual
           await saveState(false);
         }
       }

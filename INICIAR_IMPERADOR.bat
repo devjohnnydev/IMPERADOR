@@ -1,10 +1,14 @@
 @echo off
-title IMPERADOR LOUNGE BAR - SISTEMA COMPLETO
+chcp 65001 >nul
+title IMPERADOR LOUNGE BAR - SISTEMA EM PYTHON + SQLITE3
 cd /d "%~dp0"
 echo ====================================================================
-echo   INICIANDO SISTEMA IMPERADOR LOUNGE BAR (MENU TAGME + TABLET PIX + ERP)
+echo   INICIANDO IMPERADOR LOUNGE BAR EM PYTHON (SQLite3 + PIX BRCode)
 echo ====================================================================
-start http://localhost:3000
-node server.js
+python app.py
+if %errorlevel% neq 0 (
+    echo.
+    echo [AVISO] Tentando iniciar via python3...
+    python3 app.py
+)
 pause
-
