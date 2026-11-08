@@ -21,6 +21,8 @@ from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import auth
+import chat_pedido
+import time as _time
 
 LOCAIS = ("deposito", "bar", "uso")
 NOME_LOCAL = {"deposito": "Depósito", "bar": "Bar (venda)", "uso": "Bar (uso/produção)"}
@@ -111,6 +113,16 @@ def garantir_erp(estado: Dict) -> bool:
         if not isinstance(erp.get(chave), list):
             erp[chave] = []
             alterou = True
+    if not isinstance(estado.get("chats"), list):
+        estado["chats"] = []
+        alterou = True
+    if not isinstance(estado.get("iam"), dict) or not isinstance(estado["iam"].get("devices"), list):
+        estado["iam"] = {"devices": []}
+        alterou = True
+    cfg = estado.setdefault("settings", {})
+    if not isinstance(cfg.get("commission"), dict):
+        cfg["commission"] = {"mode": "individual", "percent": 5}
+        alterou = True
     for chave in ("orders", "waiterCalls", "fixedExpenses", "employees"):
         if not isinstance(estado.get(chave), list):
             estado[chave] = []
@@ -628,6 +640,233 @@ def acao_funcionario_excluir(estado: Dict, p: Dict, user: Dict) -> str:
     return "Funcionário excluído."
 
 
+
+
+# ---------------------------------------------------------------------------
+# Comissão: igual para todos ou individual por vendedor
+# ---------------------------------------------------------------------------
+def acao_comissao_config(estado: Dict, p: Dict, user: Dict) -> str:
+    modo = "unica" if p.get("mode") == "unica" else "individual"
+    pct = max(0.0, min(100.0, _num(p.get("percent"))))
+    estado.setdefault("settings", {})["commission"] = {"mode": modo, "percent": pct}
+    return "Comissão igual para todos os vendedores." if modo == "unica" else "Comissão individual: cada vendedor tem o seu percentual (em IAM > Usuários)."
+
+
+# ---------------------------------------------------------------------------
+# Chat de pedidos do cliente (nome + mesa -> pedido -> atendente leva e cobra)
+# ---------------------------------------------------------------------------
+MAX_CHATS = 300
+MAX_MSGS = 150
+
+
+def _mesa_do_texto(estado: Dict, texto: str) -> str:
+    texto = _txt(texto, 40)
+    mesas = [t.get("id", "") for t in estado.get("tables", []) or []]
+    if texto in mesas:
+        return texto
+    import re as _re
+    nums = _re.findall(r"\d+", texto)
+    if nums:
+        alvo = int(nums[-1])
+        for m in mesas:
+            achados = _re.findall(r"\d+", m)
+            if achados and int(achados[-1]) == alvo and ("camarote" in m.lower()) == ("camarote" in texto.lower()):
+                return m
+        return f"Mesa {alvo:02d}"
+    return texto
+
+
+def _msg(chat: Dict, quem: str, texto: str, **extra) -> Dict:
+    chat["seq"] = int(chat.get("seq", 0)) + 1
+    m = {"id": chat["seq"], "from": quem, "text": texto, "at": _agora(), **extra}
+    chat["messages"].append(m)
+    del chat["messages"][:-MAX_MSGS]
+    chat["updatedAt"] = m["at"]
+    return m
+
+
+def _chat_publico(chat: Dict, desde: int = 0) -> Dict:
+    return {"id": chat["id"], "name": chat["name"], "table": chat["table"], "status": chat["status"],
+            "messages": [m for m in chat["messages"] if m["id"] > desde]}
+
+
+def _chat_req(estado: Dict, cid: str, token: str) -> Dict:
+    chat = next((c for c in estado.get("chats", []) if c.get("id") == cid), None)
+    if not chat or not token or chat.get("token") != token:
+        raise ErroNegocio("Conversa não encontrada. Comece uma nova.")
+    return chat
+
+
+def chat_iniciar(estado: Dict, p: Dict) -> Dict:
+    nome = _txt(p.get("name"), 40)
+    mesa = _mesa_do_texto(estado, p.get("table"))
+    if not nome or not mesa:
+        raise ErroNegocio("Informe o seu nome e o número da mesa.")
+    limite = datetime.now().timestamp() - 2 * 86400
+    estado["chats"] = [c for c in estado.get("chats", [])
+                       if datetime.strptime(c.get("updatedAt", _agora())[:19], "%Y-%m-%dT%H:%M:%S").timestamp() > limite][-MAX_CHATS:]
+    chat = {"id": _id("CHAT"), "token": secrets.token_urlsafe(18), "name": nome, "table": mesa, "status": "aberto",
+            "createdAt": _agora(), "updatedAt": _agora(), "messages": [], "orderIds": [], "unreadStaff": 0, "seq": 0}
+    estado["chats"].append(chat)
+    _msg(chat, "bot", f"Olá, {nome}! Você está na {mesa}. Escreva o que deseja, do seu jeito — por exemplo: "
+                      f"\"2 caipirinhas e uma batata\" ou \"mais um balde de cerveja\". Para chamar o atendente, escreva \"garçom\"; para pedir a conta, \"conta\".")
+    return {"chatId": chat["id"], "token": chat["token"], "chat": _chat_publico(chat)}
+
+
+def chat_enviar(estado: Dict, p: Dict) -> Dict:
+    chat = _chat_req(estado, p.get("chatId"), p.get("token"))
+    if chat["status"] != "aberto":
+        raise ErroNegocio("Esta conversa foi encerrada. Comece uma nova.")
+    texto = _txt(p.get("text"), 300)
+    if not texto:
+        raise ErroNegocio("Escreva uma mensagem.")
+    desde = int(p.get("since") or 0)
+    _msg(chat, "cliente", texto)
+    chat["unreadStaff"] = int(chat.get("unreadStaff", 0)) + 1
+
+    itens_ativos = [i for i in estado.get("menuItems", []) if i.get("available", True) is not False]
+    cats = {c["id"]: c.get("name", "") for c in estado.get("categories", [])}
+    ja = []
+    for o in estado.get("orders", []):
+        if o.get("id") in chat["orderIds"] or (o.get("tableId") == chat["table"] and o.get("paymentStatus") != "pago"):
+            ja += [ln.get("itemId") for ln in o.get("items", [])]
+    r = chat_pedido.interpretar(texto, itens_ativos, cats, ja)
+
+    if r["intent"]:
+        tipo, motivo = r["intent"]
+        estado.setdefault("waiterCalls", []).insert(0, {
+            "id": _id("CALL"), "tableId": chat["table"], "type": tipo, "status": "pendente",
+            "message": f"{motivo} — {chat['name']}", "createdAt": _agora()[11:16], "chatId": chat["id"]})
+        respostas = {"conta": "Pedido de conta enviado! O atendente já vai até a sua mesa para fazer a cobrança.",
+                     "garcom": "Já chamei o atendente para a sua mesa.",
+                     "carvao": "Pedido de troca de carvão enviado para a tabacaria."}
+        _msg(chat, "bot", respostas.get(tipo, "Avisei o atendente."))
+    else:
+        partes = []
+        if r["items"]:
+            total = sum(_num(i["price"]) * i["qty"] for i in r["items"])
+            lista = "; ".join(f"{i['qty']}x {i['name']}" for i in r["items"])
+            total_txt = f"{total:.2f}".replace(".", ",")
+            partes.append(("proposal", f"Entendi: {lista} — total R$ {total_txt}. Posso enviar o pedido?"))
+        if r["ambiguous"]:
+            partes.append(("options", "Qual destes você quer?"))
+        if r["unknown"] and not r["items"] and not r["ambiguous"]:
+            partes.append(("text", f"Não encontrei \"{', '.join(r['unknown'])}\" no cardápio. Tente outro nome ou toque em Ver cardápio."))
+        elif r["unknown"]:
+            partes.append(("text", f"Não encontrei: {', '.join(r['unknown'])}."))
+        for tipo, txt in partes:
+            if tipo == "proposal":
+                _msg(chat, "bot", txt, proposal=r["items"])
+            elif tipo == "options":
+                _msg(chat, "bot", txt, options=r["ambiguous"])
+            else:
+                _msg(chat, "bot", txt)
+        if not partes:
+            _msg(chat, "bot", "Recebido! Se for um pedido, escreva o nome do produto e a quantidade.")
+    return {"chat": _chat_publico(chat, desde)}
+
+
+def chat_confirmar(estado: Dict, p: Dict) -> Dict:
+    chat = _chat_req(estado, p.get("chatId"), p.get("token"))
+    if chat["status"] != "aberto":
+        raise ErroNegocio("Esta conversa foi encerrada.")
+    desde = int(p.get("since") or 0)
+    linhas = [{"itemId": i.get("itemId"), "qty": i.get("qty"), "notes": i.get("notes", "")} for i in (p.get("items") or [])[:20]]
+    oid = f"PED-{secrets.randbelow(900000) + 100000}"
+    base = _montar_pedido(estado, linhas, None, oid)
+    pct = _num((estado.get("settings") or {}).get("serviceFeePercent"), 10)
+    taxa = round(base["subtotal"] * pct / 100, 2) if (estado.get("settings") or {}).get("enableServiceFeeByDefault") else 0.0
+    agora = _agora()
+    pedido = {"id": oid, "tableId": chat["table"], "customerName": chat["name"], "source": "Chat do cliente",
+              "paymentMethod": "A cobrar na mesa", "paymentStatus": "pendente", "orderStatus": "recebido",
+              "createdAt": agora.replace("T", " ")[:16], "ts": agora, "serviceFee": taxa,
+              "total": round(base["subtotal"] + taxa, 2), "sellerId": "", "sellerName": "", "chatId": chat["id"], **base}
+    estado["orders"].insert(0, pedido)
+    chat["orderIds"].append(oid)
+    mesa = next((t for t in estado.get("tables", []) if t.get("id") == chat["table"]), None)
+    if mesa:
+        mesa["status"] = "ocupada"
+    total_txt = f"{pedido['total']:.2f}".replace(".", ",")
+    _msg(chat, "bot", f"Pedido {oid} enviado! Total R$ {total_txt}. O atendente leva até a {chat['table']} e faz a cobrança.", orderId=oid)
+    chat["unreadStaff"] = int(chat.get("unreadStaff", 0)) + 1
+    return {"chat": _chat_publico(chat, desde)}
+
+
+def chat_buscar(estado: Dict, p: Dict) -> Dict:
+    chat = _chat_req(estado, p.get("chatId"), p.get("token"))
+    return {"chat": _chat_publico(chat, int(p.get("since") or 0))}
+
+
+def acao_chat_responder(estado: Dict, p: Dict, user: Dict) -> str:
+    chat = next((c for c in estado.get("chats", []) if c.get("id") == p.get("chatId")), None)
+    if not chat:
+        raise ErroNegocio("Conversa não encontrada.")
+    texto = _txt(p.get("text"), 400)
+    if texto:
+        _msg(chat, "atendente", texto, userName=user["name"])
+    chat["unreadStaff"] = 0
+    if p.get("close"):
+        chat["status"] = "encerrado"
+        _msg(chat, "bot", "Atendimento encerrado. Obrigado e volte sempre!")
+        return "Conversa encerrada."
+    return "Mensagem enviada." if texto else "Conversa marcada como lida."
+
+
+# ---------------------------------------------------------------------------
+# IAM: tablets / dispositivos
+# ---------------------------------------------------------------------------
+_presenca: Dict[str, Dict] = {}  # deviceId -> {lastSeen, view, userName, cart, ip}
+
+
+def dispositivo_registrar(estado: Dict, p: Dict, ip: str) -> Dict:
+    devices = estado["iam"]["devices"]
+    pendentes = [d for d in devices if d.get("status") == "pendente"]
+    if len(pendentes) >= 30:
+        raise ErroNegocio("Há tablets demais aguardando liberação no IAM.")
+    nome = _txt(p.get("name"), 40) or f"Tablet {len(devices) + 1:02d}"
+    dev = {"id": _id("TAB"), "key": secrets.token_urlsafe(24), "name": nome, "status": "pendente", "mode": "mesa",
+           "table": _mesa_do_texto(estado, p.get("table")) if p.get("table") else "", "blocked": False,
+           "createdAt": _agora(), "registeredIp": ip}
+    devices.append(dev)
+    return {"deviceId": dev["id"], "key": dev["key"]}
+
+
+def dispositivo_ping(estado: Dict, p: Dict, user: Optional[Dict], ip: str) -> Dict:
+    dev = next((d for d in estado["iam"]["devices"] if d.get("id") == p.get("deviceId")), None)
+    if not dev or dev.get("key") != p.get("key"):
+        return {"ok": False, "status": "desconhecido"}
+    _presenca[dev["id"]] = {
+        "lastSeen": int(_time.time() * 1000), "view": _txt(p.get("view"), 20), "ip": ip,
+        "userId": (user or {}).get("id", ""), "userName": (user or {}).get("name", ""),
+        "table": _txt(p.get("table"), 40), "cart": int(_num(p.get("cart"))),
+    }
+    return {"ok": True, "status": dev["status"], "name": dev["name"], "mode": dev["mode"],
+            "table": dev.get("table", ""), "blocked": bool(dev.get("blocked"))}
+
+
+def presenca_dispositivos() -> Dict[str, Dict]:
+    return dict(_presenca)
+
+
+def acao_dispositivo_salvar(estado: Dict, p: Dict, user: Dict) -> str:
+    dev = next((d for d in estado["iam"]["devices"] if d.get("id") == p.get("id")), None)
+    if not dev:
+        raise ErroNegocio("Tablet não encontrado.")
+    dev["name"] = _txt(p.get("name"), 40) or dev["name"]
+    dev["mode"] = p.get("mode") if p.get("mode") in ("mesa", "garcom", "caixa") else "mesa"
+    dev["table"] = _txt(p.get("table"), 40)
+    dev["blocked"] = bool(p.get("blocked"))
+    if p.get("approve") or dev["status"] == "pendente" and p.get("status") == "ativo":
+        dev["status"] = "ativo"
+    return "Tablet atualizado."
+
+
+def acao_dispositivo_excluir(estado: Dict, p: Dict, user: Dict) -> str:
+    estado["iam"]["devices"] = [d for d in estado["iam"]["devices"] if d.get("id") != p.get("id")]
+    _presenca.pop(p.get("id"), None)
+    return "Tablet removido. Ele precisará ser configurado de novo."
+
+
 # ---------------------------------------------------------------------------
 # Registro das ações: nome -> (módulo, nível mínimo, função)
 # ---------------------------------------------------------------------------
@@ -647,6 +886,10 @@ ACOES: Dict[str, Tuple[str, str, Callable]] = {
     "despesa_excluir": ("financeiro", "edit", acao_despesa_excluir),
     "funcionario_salvar": ("financeiro", "edit", acao_funcionario_salvar),
     "funcionario_excluir": ("financeiro", "edit", acao_funcionario_excluir),
+    "comissao_config": ("comissoes", "edit", acao_comissao_config),
+    "chat_responder": ("vendas", "use", acao_chat_responder),
+    "dispositivo_salvar": ("usuarios", "edit", acao_dispositivo_salvar),
+    "dispositivo_excluir": ("usuarios", "edit", acao_dispositivo_excluir),
 }
 
 
@@ -664,9 +907,13 @@ def executar(estado: Dict, nome: str, payload: Dict, user: Dict) -> str:
 # O que cada usuário pode receber do estado
 # ---------------------------------------------------------------------------
 def estado_para_usuario(estado: Dict, user: Dict) -> Dict:
-    if user.get("isAdmin"):
-        return estado
     e = copy.deepcopy(estado)
+    for c in e.get("chats", []) or []:
+        c.pop("token", None)
+    for d in (e.get("iam") or {}).get("devices", []) or []:
+        d.pop("key", None)
+    if user.get("isAdmin"):
+        return e
     pode = lambda m, n="view": auth.pode(user, m, n)  # noqa: E731
 
     cfg = e.get("settings", {})
@@ -704,6 +951,9 @@ def estado_para_usuario(estado: Dict, user: Dict) -> Dict:
         e["orders"] = []
     if not pode("vendas", "use"):
         e["waiterCalls"] = []
+        e["chats"] = []
+    if not pode("usuarios"):
+        e["iam"] = {"devices": []}
     if not ve_custos:
         for o in e.get("orders", []):
             o.pop("costTotal", None)

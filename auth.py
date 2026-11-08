@@ -120,13 +120,25 @@ def _carregar() -> Dict:
         u.setdefault("active", True)
         u.setdefault("commissionPercent", 0)
         if "permissions" not in u:
-            u["permissions"] = dict(PERFIS.get(u["role"], PERFIS["vendedor"])["permissions"])
+            u["permissions"] = dict(_perfis(dados).get(u["role"], PERFIS["vendedor"])["permissions"])
             alterou = True
         for m in MODULOS:
             u["permissions"].setdefault(m, "edit" if u["role"] == "admin" else "none")
     if alterou:
         _salvar(dados)
     return dados
+
+
+def _perfis(dados: Dict) -> Dict[str, Dict]:
+    """Perfis padrão + perfis criados/alterados no IAM (o Administrador não muda)."""
+    perfis = {k: {"label": v["label"], "permissions": dict(v["permissions"]), "builtin": True} for k, v in PERFIS.items()}
+    for k, v in (dados.get("roles") or {}).items():
+        if k == "admin":
+            continue
+        base = perfis.get(k, {"builtin": False})
+        perms = {m: (v.get("permissions", {}).get(m) if v.get("permissions", {}).get(m) in NIVEIS else "none") for m in MODULOS}
+        perfis[k] = {"label": v.get("label") or base.get("label") or k, "permissions": perms, "builtin": base.get("builtin", False)}
+    return perfis
 
 
 def _buscar(dados: Dict, usuario: str) -> Optional[Dict]:
@@ -138,14 +150,15 @@ def _buscar_id(dados: Dict, uid: str) -> Optional[Dict]:
     return next((u for u in dados.get("users", []) if u["id"] == uid), None)
 
 
-def publico(reg: Dict) -> Dict:
+def publico(reg: Dict, perfis: Optional[Dict] = None) -> Dict:
     """Dados do usuário que podem ir para o navegador (sem hash/salt)."""
+    perfis = perfis or PERFIS
     return {
         "id": reg["id"],
         "username": reg["username"],
         "name": reg.get("name") or reg["username"],
         "role": reg.get("role", "vendedor"),
-        "roleLabel": PERFIS.get(reg.get("role"), {}).get("label", reg.get("role")),
+        "roleLabel": perfis.get(reg.get("role"), {}).get("label", reg.get("role")),
         "permissions": dict(reg.get("permissions", {})),
         "commissionPercent": float(reg.get("commissionPercent") or 0),
         "active": bool(reg.get("active", True)),
@@ -206,8 +219,8 @@ def login(usuario: str, senha: str, ip: str) -> Tuple[bool, Dict]:
         _falhas.pop(ip, None)
         token = secrets.token_urlsafe(32)
         exp = time.time() + SESSAO_SEGUNDOS
-        _tokens[token] = {"userId": reg["id"], "exp": exp}
-        return True, {"token": token, "expiresAt": int(exp * 1000), "user": publico(reg)}
+        _tokens[token] = {"userId": reg["id"], "exp": exp, "ip": ip, "createdAt": time.time(), "lastSeen": time.time(), "device": ""}
+        return True, {"token": token, "expiresAt": int(exp * 1000), "user": publico(reg, _perfis(dados))}
 
 
 def usuario_do_token(token: str) -> Optional[Dict]:
@@ -221,11 +234,13 @@ def usuario_do_token(token: str) -> Optional[Dict]:
         if sessao["exp"] < time.time():
             _tokens.pop(token, None)
             return None
-        reg = _buscar_id(_carregar(), sessao["userId"])
+        dados = _carregar()
+        reg = _buscar_id(dados, sessao["userId"])
         if not reg or not reg.get("active", True):
             _tokens.pop(token, None)
             return None
-        return publico(reg)
+        sessao["lastSeen"] = time.time()
+        return publico(reg, _perfis(dados))
 
 
 def logout(token: str) -> None:
@@ -279,11 +294,96 @@ def trocar_senha(uid: str, senha_atual: str, nova_senha: str, token_atual: str =
 
 def listar_usuarios() -> List[Dict]:
     with _lock:
-        return [publico(u) for u in _carregar().get("users", [])]
+        dados = _carregar()
+        perfis = _perfis(dados)
+        online = {}
+        agora = time.time()
+        for s in _tokens.values():
+            if s["exp"] > agora:
+                online[s["userId"]] = max(online.get(s["userId"], 0), s.get("lastSeen", 0))
+        lista = []
+        for u in dados.get("users", []):
+            pu = publico(u, perfis)
+            pu["lastSeen"] = int(online[u["id"]] * 1000) if u["id"] in online else None
+            lista.append(pu)
+        return lista
 
 
 def perfis_publicos() -> Dict:
-    return {k: {"label": v["label"], "permissions": v["permissions"]} for k, v in PERFIS.items()}
+    with _lock:
+        dados = _carregar()
+        perfis = _perfis(dados)
+        for k, v in perfis.items():
+            v["users"] = sum(1 for u in dados.get("users", []) if u.get("role") == k)
+        return perfis
+
+
+def salvar_perfil(dados_in: Dict, quem: Dict) -> Tuple[bool, str]:
+    """Cria ou altera um perfil (modelo de permissões) no IAM."""
+    chave = re.sub(r"[^a-z0-9_]", "", (dados_in.get("key") or "").strip().lower().replace(" ", "_"))[:30]
+    rotulo = (dados_in.get("label") or "").strip()[:50]
+    if not rotulo:
+        return False, "Informe o nome do perfil."
+    with _lock:
+        dados = _carregar()
+        perfis = _perfis(dados)
+        if not chave:
+            base = re.sub(r"[^a-z0-9]+", "_", rotulo.lower()).strip("_")[:24] or "perfil"
+            chave = base
+            n = 2
+            while chave in perfis:
+                chave = f"{base}_{n}"
+                n += 1
+        if chave == "admin":
+            return False, "O perfil Administrador não pode ser alterado."
+        perms_in = dados_in.get("permissions") or {}
+        perms = {m: (perms_in.get(m) if perms_in.get(m) in NIVEIS else "none") for m in MODULOS}
+        dados.setdefault("roles", {})[chave] = {"label": rotulo, "permissions": perms}
+        aplicados = 0
+        if dados_in.get("applyToUsers"):
+            for u in dados.get("users", []):
+                if u.get("role") == chave:
+                    u["permissions"] = dict(perms)
+                    aplicados += 1
+        _salvar(dados)
+        return True, f"Perfil salvo{f' e aplicado a {aplicados} usuário(s)' if aplicados else ''}."
+
+
+def excluir_perfil(chave: str) -> Tuple[bool, str]:
+    with _lock:
+        dados = _carregar()
+        if chave in PERFIS:
+            return False, "Perfis padrão não podem ser excluídos (você pode alterar as permissões)."
+        if any(u.get("role") == chave for u in dados.get("users", [])):
+            return False, "Há usuários com este perfil. Troque o perfil deles antes de excluir."
+        (dados.get("roles") or {}).pop(chave, None)
+        _salvar(dados)
+        return True, "Perfil excluído."
+
+
+def marcar_dispositivo(token: str, device_id: str) -> None:
+    with _lock:
+        if token in _tokens:
+            _tokens[token]["device"] = device_id
+
+
+def sessoes_ativas() -> List[Dict]:
+    with _lock:
+        nomes = {u["id"]: (u.get("name") or u["username"]) for u in _carregar().get("users", [])}
+        agora = time.time()
+        return sorted([
+            {"userId": s["userId"], "userName": nomes.get(s["userId"], "?"), "ip": s.get("ip", ""),
+             "device": s.get("device", ""), "since": int(s.get("createdAt", 0) * 1000), "lastSeen": int(s.get("lastSeen", 0) * 1000)}
+            for s in _tokens.values() if s["exp"] > agora
+        ], key=lambda x: -x["lastSeen"])
+
+
+def encerrar_sessoes_de(uid: str, quem: Dict) -> Tuple[bool, str]:
+    if uid == quem.get("id"):
+        return False, "Para encerrar a sua própria sessão, use o botão Sair."
+    with _lock:
+        _encerrar_sessoes(uid)
+    return True, "Sessões encerradas."
 
 
 def salvar_usuario(dados_in: Dict, quem: Dict) -> Tuple[bool, str]:
@@ -295,7 +395,8 @@ def salvar_usuario(dados_in: Dict, quem: Dict) -> Tuple[bool, str]:
         erro = _validar_login(username)
         if erro:
             return False, erro
-        role = dados_in.get("role") if dados_in.get("role") in PERFIS else "vendedor"
+        perfis = _perfis(dados)
+        role = dados_in.get("role") if dados_in.get("role") in perfis else "vendedor"
         if role == "admin" and not quem.get("isAdmin"):
             return False, "Somente um administrador pode criar outro administrador."
 
@@ -307,7 +408,7 @@ def salvar_usuario(dados_in: Dict, quem: Dict) -> Tuple[bool, str]:
             return False, "Somente um administrador pode alterar outro administrador."
 
         perms_in = dados_in.get("permissions") or {}
-        perms = {m: (perms_in.get(m) if perms_in.get(m) in NIVEIS else PERFIS[role]["permissions"][m]) for m in MODULOS}
+        perms = {m: (perms_in.get(m) if perms_in.get(m) in NIVEIS else perfis[role]["permissions"][m]) for m in MODULOS}
         if role == "admin":
             perms = {m: "edit" for m in MODULOS}
 

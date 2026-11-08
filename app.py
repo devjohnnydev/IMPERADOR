@@ -20,6 +20,7 @@ import os
 import re
 import sys
 import threading
+import time
 import uuid
 import webbrowser
 from datetime import datetime
@@ -52,6 +53,20 @@ MAX_CORPO = 20 * 1024 * 1024
 # Uma gravação por vez no estado (evita que duas ações simultâneas se sobrescrevam)
 _estado_lock = threading.Lock()
 
+# Limite simples de requisições públicas (chat / tablets) por IP
+_limites: dict = {}
+
+
+def _limite_ok(ip: str, chave: str, maximo: int, janela: float = 60.0) -> bool:
+    agora = time.time()
+    lista = [t for t in _limites.get((ip, chave), []) if agora - t < janela]
+    if len(lista) >= maximo:
+        _limites[(ip, chave)] = lista
+        return False
+    lista.append(agora)
+    _limites[(ip, chave)] = lista
+    return True
+
 
 def _url_absoluta(url: str, estado: dict) -> str:
     """Converte /uploads/foto.jpg em https://seusite.com/uploads/foto.jpg (exigido pelas redes sociais)."""
@@ -79,6 +94,7 @@ def estado_publico(estado: dict) -> dict:
     for chave in ("accessToken", "igUserId", "webhookUrl"):
         ig.pop(chave, None)
     cfg["instagramConfig"] = ig
+    cfg.pop("commission", None)
     home = dict(estado.get("home", {}) or {})
     home.pop("facebookConfig", None)
     ocultos = ("costPrice", "minStock", "composition", "targetMarkup", "extraCost")
@@ -109,6 +125,9 @@ def resposta_estado(estado: dict, user) -> dict:
     if auth.pode(user, "usuarios") or auth.pode(user, "comissoes") or auth.pode(user, "vendas", "edit"):
         dados["users"] = auth.listar_usuarios()
         dados["roles"] = auth.perfis_publicos()
+    if auth.pode(user, "usuarios"):
+        dados["sessions"] = auth.sessoes_ativas()
+        dados["devicesOnline"] = erp.presenca_dispositivos()
     return dados
 
 
@@ -232,6 +251,47 @@ class ImperadorPythonHandler(BaseHTTPRequestHandler):
 
         user = self._usuario()
 
+        # ---- Chat de pedidos do cliente (sem login) --------------------------
+        if rota in ("/api/chat/start", "/api/chat/send", "/api/chat/confirm", "/api/chat/poll"):
+            if not _limite_ok(self._ip(), "chat", 90):
+                self._responder_json(429, {"ok": False, "error": "Muitas mensagens. Aguarde um instante."})
+                return
+            funcoes = {"/api/chat/start": erp.chat_iniciar, "/api/chat/send": erp.chat_enviar,
+                       "/api/chat/confirm": erp.chat_confirmar, "/api/chat/poll": erp.chat_buscar}
+            with _estado_lock:
+                estado = carregar_estado()
+                try:
+                    resultado = funcoes[rota](estado, payload)
+                except erp.ErroNegocio as exc:
+                    self._responder_json(400, {"ok": False, "error": str(exc)})
+                    return
+                if rota != "/api/chat/poll":
+                    salvar_estado_completo(estado)
+            self._responder_json(200, {"ok": True, **resultado})
+            return
+
+        # ---- Tablets: cadastro e sinal de presença ---------------------------
+        if rota == "/api/device/register":
+            if not _limite_ok(self._ip(), "device", 10):
+                self._responder_json(429, {"ok": False, "error": "Aguarde um instante."})
+                return
+            with _estado_lock:
+                estado = carregar_estado()
+                try:
+                    resultado = erp.dispositivo_registrar(estado, payload, self._ip())
+                except erp.ErroNegocio as exc:
+                    self._responder_json(400, {"ok": False, "error": str(exc)})
+                    return
+                salvar_estado_completo(estado)
+            self._responder_json(200, {"ok": True, **resultado})
+            return
+
+        if rota == "/api/device/ping":
+            if user:
+                auth.marcar_dispositivo(self._token(), str(payload.get("deviceId", ""))[:40])
+            self._responder_json(200, erp.dispositivo_ping(carregar_estado(), payload, user, self._ip()))
+            return
+
         # ---- Pedidos e chamados do cardápio QR / tablet (sem login) ---------
         if rota == "/api/public/sync":
             with _estado_lock:
@@ -269,6 +329,23 @@ class ImperadorPythonHandler(BaseHTTPRequestHandler):
                     return
                 salvar_estado_completo(estado)
             self._responder_json(200, {"message": mensagem, **resposta_estado(estado, user)})
+            return
+
+        # ---- IAM: perfis e sessões --------------------------------------------
+        if rota in ("/api/roles/save", "/api/roles/delete", "/api/sessions/end"):
+            if not auth.pode(user, "usuarios", "edit"):
+                self._negar(user)
+                return
+            if rota == "/api/roles/save":
+                ok, msg = auth.salvar_perfil(payload, user)
+            elif rota == "/api/roles/delete":
+                ok, msg = auth.excluir_perfil(str(payload.get("key", "")))
+            else:
+                ok, msg = auth.encerrar_sessoes_de(str(payload.get("userId", "")), user)
+            if not ok:
+                self._responder_json(400, {"ok": False, "error": msg})
+                return
+            self._responder_json(200, {"message": msg, **resposta_estado(carregar_estado(), self._usuario())})
             return
 
         # ---- Usuários e permissões ------------------------------------------

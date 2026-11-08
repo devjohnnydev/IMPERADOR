@@ -173,6 +173,9 @@ const ImperadorHome = (() => {
               <span class="hm-cat-tile-arrow">→</span>
             </a>`).join('')}
         </div>
+        <div class="hm-center hm-reveal">
+          <a class="hm-btn hm-btn-outline" href="#precos">Ver todos os preços</a>
+        </div>
       </section>
 
       <section class="hm-section" id="hm-pratos">
@@ -288,6 +291,7 @@ const ImperadorHome = (() => {
               ${cats.map(c => `<a href="#cardapio/${esc(c.id)}"><span>${esc(c.icon || '🍽️')}</span>${esc(c.name)}</a>`).join('')}
             </div>
           </div>
+          <a href="#precos" class="${mode === 'precos' ? 'active' : ''}">Preços</a>
           ${homeLink('hm-pratos', 'Pratos')}
           ${homeLink('hm-bar', 'O Bar')}
           ${homeLink('hm-visite', 'Visite')}
@@ -306,6 +310,7 @@ const ImperadorHome = (() => {
         </div>
         <div class="hm-socials">${socialIcons()}</div>
         <div class="hm-footer-links">
+          <a href="#precos">Cardápio com preços</a>
           <a href="javascript:void(0)" onclick="ImperadorApp.setViewMode('admin');ImperadorApp.setAdminTab('site')">Área do administrador</a>
         </div>
         <small>© ${new Date().getFullYear()} ${esc(s.brandName || '')}</small>
@@ -432,6 +437,76 @@ const ImperadorHome = (() => {
     </div>`;
   }
 
+  function renderPriceList() {
+    const st = S();
+    const s = st.settings || {};
+    const cats = siteCategories();
+    return `
+    <div class="hm hm-prices">
+      ${renderNav('precos')}
+      <header class="hm-price-hero">
+        <div class="hm-price-hero-inner">
+          <div class="hm-crumbs"><a href="#inicio" onclick="ImperadorHome.goHome(event)">Início</a> / <span>Cardápio com preços</span></div>
+          <h1>Cardápio</h1>
+          <p>Todos os produtos e preços, organizados por categoria.${Number(s.serviceFeePercent) ? ` Taxa de serviço opcional de ${esc(s.serviceFeePercent)}%.` : ''}</p>
+          <div class="hm-price-tools">
+            <div class="hm-search">${'🔎'}<input type="search" placeholder="Buscar produto ou preço..." oninput="ImperadorHome.filterPrices(this.value)" /></div>
+            <button class="hm-btn hm-btn-outline hm-btn-sm" onclick="window.print()">🖨️ Imprimir</button>
+          </div>
+        </div>
+      </header>
+      <nav class="hm-price-cats">${cats.map(c => `<a href="javascript:void(0)" onclick="ImperadorHome.scrollTo(event,'pc-${esc(c.id)}')">${esc(c.icon || '')} ${esc(c.name)}</a>`).join('')}</nav>
+      <div class="hm-price-body">
+        ${cats.map(c => {
+          const items = itemsOf(c.id);
+          if (!items.length) return '';
+          return `
+          <section class="hm-price-sec" id="pc-${esc(c.id)}">
+            <div class="hm-price-sec-head">
+              <span class="hm-price-sec-icon">${esc(c.icon || '🍽️')}</span>
+              <div><h2>${esc(c.name)}</h2>${c.description ? `<p>${esc(c.description)}</p>` : ''}</div>
+              <a href="#cardapio/${esc(c.id)}" class="hm-price-sec-link">Ver fotos →</a>
+            </div>
+            <div class="hm-price-list">
+              ${items.map(it => {
+                const out = Number(it.stock) <= 0 && it.stock !== undefined && it.stock !== '';
+                return `
+                <div class="hm-pi ${out ? 'out' : ''}" data-search="${esc((it.name + ' ' + (it.description || '') + ' ' + (it.badge || '') + ' ' + c.name).toLowerCase())}" ${out ? '' : `onclick="ImperadorApp.openProductModal('${esc(it.id)}')"`}>
+                  <div class="hm-pi-main">
+                    <span class="hm-pi-name">${esc(it.name)}${it.badge ? `<em>${esc(it.badge)}</em>` : ''}</span>
+                    <span class="hm-pi-dots"></span>
+                    <span class="hm-pi-price">${it.oldPrice && Number(it.oldPrice) > Number(it.price) ? `<s>${brl(it.oldPrice)}</s>` : ''}${out ? '<small>Esgotado</small>' : brl(it.price)}</span>
+                  </div>
+                  ${it.description ? `<p class="hm-pi-desc">${esc(it.description)}</p>` : ''}
+                </div>`;
+              }).join('')}
+            </div>
+          </section>`;
+        }).join('')}
+        <p class="hm-empty" id="hmPriceEmpty" style="display:none">Nenhum produto encontrado.</p>
+      </div>
+      ${renderFooter()}
+      ${renderCartBar()}
+    </div>`;
+  }
+
+  function filterPrices(q) {
+    const query = String(q || '').trim().toLowerCase();
+    let total = 0;
+    document.querySelectorAll('.hm-price-sec').forEach(sec => {
+      let shown = 0;
+      sec.querySelectorAll('.hm-pi').forEach(el => {
+        const ok = !query || el.dataset.search.includes(query);
+        el.style.display = ok ? '' : 'none';
+        if (ok) shown++;
+      });
+      sec.style.display = shown ? '' : 'none';
+      total += shown;
+    });
+    const e = document.getElementById('hmPriceEmpty');
+    if (e) e.style.display = total ? 'none' : '';
+  }
+
   function filterItems(q) {
     const query = String(q || '').trim().toLowerCase();
     let shown = 0;
@@ -466,14 +541,19 @@ const ImperadorHome = (() => {
     return m ? decodeURIComponent(m[1]) : null;
   }
 
+  function isPricesHash() { return (location.hash || '') === '#precos'; }
+
   function handleHashChange() {
     const id = categoryFromHash();
+    const mode = A().getUi().viewMode;
     if (id) showCategory(id);
-    else if (A().getUi().viewMode === 'category') ImperadorApp.setViewMode('home');
+    else if (isPricesHash()) { ImperadorApp.setViewMode('precos'); window.scrollTo({ top: 0, behavior: 'auto' }); }
+    else if (mode === 'category' || mode === 'precos') ImperadorApp.setViewMode('home');
   }
   window.addEventListener('hashchange', handleHashChange);
   window.addEventListener('popstate', () => {
-    if (!categoryFromHash() && A().getUi().viewMode === 'category') ImperadorApp.setViewMode('home');
+    const mode = A().getUi().viewMode;
+    if (!categoryFromHash() && !isPricesHash() && (mode === 'category' || mode === 'precos')) ImperadorApp.setViewMode('home');
   });
 
   // Remove nomes de outras marcas que possam estar em dados antigos salvos
@@ -1258,7 +1338,7 @@ const ImperadorHome = (() => {
   }
 
   return {
-    ensureHome, renderHome, renderCategoryPage, afterRenderHome, renderAdminSiteTab, scrollTo,
+    ensureHome, renderHome, renderCategoryPage, renderPriceList, filterPrices, isPricesHash, afterRenderHome, renderAdminSiteTab, scrollTo,
     goHome, filterItems, categoryFromHash, setCategoryField, uploadCategoryCover,
     openLightbox, closeLightbox, stepLightbox,
     setField, uploadHomeImage, move, removeItem, setBarCaption, addBarPhotos, replaceBarPhoto,

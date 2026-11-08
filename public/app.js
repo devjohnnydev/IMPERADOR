@@ -309,6 +309,8 @@ const ImperadorApp = (() => {
     if (hashCat) {
       ui.viewMode = 'category';
       ui.pageCategory = hashCat;
+    } else if (window.ImperadorHome && window.ImperadorHome.isPricesHash()) {
+      ui.viewMode = 'precos';
     }
 
     ui.includeServiceFee = !!state.settings.enableServiceFeeByDefault;
@@ -449,13 +451,16 @@ const ImperadorApp = (() => {
     if (!root) return;
 
     if (window.ImperadorHome) window.ImperadorHome.ensureHome(state);
-    const isSitePage = (ui.viewMode === 'home' || ui.viewMode === 'category') && !!window.ImperadorHome;
+    const isSitePage = ['home', 'category', 'precos'].includes(ui.viewMode) && !!window.ImperadorHome;
     document.body.classList.toggle('home-mode', isSitePage);
+    document.body.classList.toggle('tablet-mode', ui.viewMode === 'tablet');
 
     if (isSitePage) {
       root.innerHTML = ui.viewMode === 'category'
         ? window.ImperadorHome.renderCategoryPage()
-        : window.ImperadorHome.renderHome();
+        : ui.viewMode === 'precos'
+          ? window.ImperadorHome.renderPriceList()
+          : window.ImperadorHome.renderHome();
       window.ImperadorHome.afterRenderHome();
     } else if (ui.viewMode === 'menu') {
       root.innerHTML = renderDigitalMenu();
@@ -463,6 +468,7 @@ const ImperadorApp = (() => {
       root.innerHTML = renderTabletKioskView();
     } else if (ui.viewMode === 'admin') {
       root.innerHTML = window.ImperadorAdmin ? window.ImperadorAdmin.render() : renderAdminErpView();
+      if (window.ImperadorAdmin) window.ImperadorAdmin.afterRender();
     }
     document.body.classList.toggle('admin-mode', ui.viewMode === 'admin');
   }

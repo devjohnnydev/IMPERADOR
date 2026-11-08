@@ -18,7 +18,7 @@ const ImperadorAdmin = (() => {
     { id: 'produtos', label: 'Produtos & preços', icon: 'tag', group: 'Vendas', desc: 'Ficha técnica, custo e margem por produto' },
     { id: 'comissoes', label: 'Vendedores', icon: 'percent', group: 'Vendas', desc: 'Vendas por vendedor, por dia e por mês, e comissões' },
     { id: 'financeiro', label: 'Financeiro', icon: 'wallet', group: 'Gestão', desc: 'Resultado do mês, despesas fixas e folha' },
-    { id: 'usuarios', label: 'Usuários', icon: 'users', group: 'Gestão', desc: 'Usuários, perfis e permissões' },
+    { id: 'usuarios', label: 'IAM — Acessos', icon: 'lock', group: 'Gestão', desc: 'Usuários, perfis, tablets e sessões ativas' },
     { id: 'site', label: 'Site & cardápio', icon: 'globe', group: 'Site e salão', desc: 'Página inicial, fotos e itens do cardápio' },
     { id: 'redes', label: 'Redes sociais', icon: 'instagram', group: 'Site e salão', desc: 'Postagens no site, Instagram e Facebook' },
     { id: 'mesas', label: 'Mesas & QR', icon: 'qr', group: 'Site e salão', desc: 'Mesas do salão e QR Codes para impressão' },
@@ -45,11 +45,12 @@ const ImperadorAdmin = (() => {
   const monthLabel = (ym) => { const [y, m] = ym.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }); };
 
   let session = loadSession();
-  let meta = { users: [], roles: {} };
+  let meta = { users: [], roles: {}, sessions: [], devicesOnline: {} };
   let view = {
     recebimento: 'pendente', aprovacoes: 'pendente', estoque: 'posicao', estoqueQ: '', estoqueCat: '',
     vendas: 'abertos', vendasPeriodo: 'hoje', vendasVendedor: '', comissoesMes: thisMonth(),
-    financeiro: 'resumo', financeiroMes: thisMonth(), site: 'home', produtosQ: '', produtosCat: ''
+    financeiro: 'resumo', financeiroMes: thisMonth(), site: 'home', produtosQ: '', produtosCat: '',
+    iam: 'usuarios', chatSel: ''
   };
 
   function loadSession() {
@@ -104,8 +105,45 @@ const ImperadorAdmin = (() => {
     if (data.user && session) { session.user = data.user; persistSession(); }
     if (Array.isArray(data.users)) meta.users = data.users;
     if (data.roles) meta.roles = data.roles;
-    if (data.state) A().setState(data.state);
+    if (Array.isArray(data.sessions)) meta.sessions = data.sessions;
+    if (data.devicesOnline) meta.devicesOnline = data.devicesOnline;
+    if (data.state) { A().setState(data.state); lastSig = signature(data.state); }
   }
+
+  // Atualização automática do painel (novos pedidos, chamados e mensagens do chat)
+  let lastSig = '';
+  function signature(st) {
+    return [(st.orders || []).length, (st.orders || []).filter(o => o.paymentStatus === 'pago').length,
+      (st.waiterCalls || []).filter(c => c.status === 'pendente').length,
+      (st.chats || []).map(c => `${c.id}:${(c.messages || []).length}:${c.unreadStaff}`).join('|'),
+      ((st.erp || {}).receipts || []).filter(n => n.status === 'pendente').length].join('#');
+  }
+  function notifyChanges(prev, next) {
+    const oldChats = Object.fromEntries((prev.chats || []).map(c => [c.id, c]));
+    (next.chats || []).forEach(c => {
+      const o = oldChats[c.id];
+      if ((!o && c.unreadStaff) || (o && c.unreadStaff > (o.unreadStaff || 0))) A().showToast(`${I('chat', 15)} Nova mensagem no chat — <strong>${esc(c.table)}</strong> (${esc(c.name)})`, 'gold');
+    });
+    const oldCalls = new Set((prev.waiterCalls || []).map(x => x.id));
+    (next.waiterCalls || []).filter(x => x.status === 'pendente' && !oldCalls.has(x.id))
+      .forEach(x => A().showToast(`${I('bell', 15)} <strong>${esc(x.tableId)}</strong>: ${esc(x.message)}`, 'gold'));
+  }
+  setInterval(async () => {
+    if (!isLoggedIn() || A().getUi().viewMode !== 'admin' || document.hidden) return;
+    try {
+      const res = await fetch('/api/state');
+      const data = await res.json();
+      if (!data.authenticated || !data.state) return;
+      const sig = signature(data.state);
+      if (sig === lastSig) return;
+      const prev = S();
+      if (can('vendas', 'use')) notifyChanges(prev, data.state);
+      applyServer(data);
+      const typing = document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+      const modalOpen = document.getElementById('modalContainer')?.style.display === 'block';
+      if (!typing && !modalOpen) rerender();
+    } catch (e) { /* sem conexão */ }
+  }, 10000);
 
   async function api(path, body) {
     let res;
@@ -124,7 +162,7 @@ const ImperadorAdmin = (() => {
       const data = await api('/api/erp/' + name, payload);
       applyServer(data);
       if (opts.close !== false) closeModal();
-      A().showToast(esc(data.message || 'Feito!'), 'emerald');
+      if (!opts.silent) A().showToast(esc(data.message || 'Feito!'), 'emerald');
       rerender();
       return data;
     } catch (e) {
@@ -304,7 +342,8 @@ const ImperadorAdmin = (() => {
     const low = (erp.products || []).filter(p => p.stock && totalUnits(p) <= (Number(p.minStock) || 0) && p.active !== false).length;
     const calls = (st.waiterCalls || []).filter(c => c.status === 'pendente').length;
     const open = (st.orders || []).filter(o => o.orderStatus !== 'cancelado' && (o.paymentStatus !== 'pago' || o.orderStatus !== 'entregue')).length;
-    return { recebimento: pend, aprovacoes: pend, estoque: low, vendas: calls + open, calls };
+    const chats = (st.chats || []).reduce((s, c) => s + (Number(c.unreadStaff) || 0), 0);
+    return { recebimento: pend, aprovacoes: pend, estoque: low, vendas: calls + open + chats, calls: calls + chats, chats };
   }
 
   function render() {
@@ -448,8 +487,11 @@ const ImperadorAdmin = (() => {
   }
   const validOrders = () => (S().orders || []).filter(o => o.orderStatus !== 'cancelado');
   const orderDay = (o) => String(o.ts || o.createdAt || '').slice(0, 10);
+  function commissionRule() { return ((S().settings || {}).commission) || { mode: 'individual', percent: 5 }; }
   function sellerPct(id) {
     if (!id) return 0;
+    const rule = commissionRule();
+    if (rule.mode === 'unica') return Number(rule.percent) || 0;
     const u = meta.users.find(x => x.id === id) || (me() && me().id === id ? me() : null);
     return u ? Number(u.commissionPercent) || 0 : 0;
   }
@@ -479,7 +521,7 @@ const ImperadorAdmin = (() => {
       kpis.push(kpi(own ? 'Minhas vendas no mês' : 'Vendas no mês', brl(sum(monthOrders)), `Ticket médio ${brl(monthOrders.length ? sum(monthOrders) / monthOrders.length : 0)}`, 'chart'));
       if (own && me()) {
         const mine = monthOrders.filter(o => o.sellerId === me().id);
-        kpis.push(kpi('Minha comissão no mês', brl(sum(mine, 'subtotal') * (Number(me().commissionPercent) || 0) / 100), `${pct(me().commissionPercent)} sobre as vendas`, 'percent', 'tone-gold'));
+        kpis.push(kpi('Minha comissão no mês', brl(sum(mine, 'subtotal') * sellerPct(me().id) / 100), `${pct(sellerPct(me().id))} sobre as vendas`, 'percent', 'tone-gold'));
       }
     }
     if (can('aprovacoes', 'use') || can('recebimento')) kpis.push(kpi('Notas aguardando aprovação', c.aprovacoes, can('aprovacoes', 'use') ? 'Clique em Aprovações para liberar' : '', 'clipboard-check', c.aprovacoes ? 'tone-warn' : ''));
@@ -1108,7 +1150,7 @@ const ImperadorAdmin = (() => {
     const sellers = [...new Map(all.filter(o => o.sellerId).map(o => [o.sellerId, o.sellerName])).entries()];
     const mineMonth = me() ? validOrders().filter(o => o.sellerId === me().id && orderDay(o).slice(0, 7) === thisMonth()) : [];
     const mineToday = mineMonth.filter(o => orderDay(o) === today());
-    const myPct = Number((me() || {}).commissionPercent) || 0;
+    const myPct = me() ? sellerPct(me().id) : 0;
     return `
       ${can('vendas', 'use') && me() ? `<div class="adm-kpis">
         ${kpi('Minhas vendas hoje', brl(mineToday.reduce((s, o) => s + (Number(o.total) || 0), 0)), `${mineToday.length} pedido(s)`, 'cart')}
@@ -1119,8 +1161,9 @@ const ImperadorAdmin = (() => {
       ${calls.length ? `<div class="adm-card adm-card-alert"><div class="adm-card-head"><h3>${I('bell', 18)} Chamados das mesas</h3></div><div class="adm-calls">${calls.map(x => `
         <div class="adm-call"><div><strong>${esc(x.tableId)}</strong><small>${esc(x.message)} · ${esc(x.createdAt)}</small></div>
         <button class="adm-btn adm-btn-sm adm-btn-ok" onclick="ImperadorAdmin.act('chamado_resolver',{id:'${esc(x.id)}'},{close:false})">${I('check', 15)} Atendido</button></div>`).join('')}</div></div>` : ''}
+      ${view.vendas === 'chat' ? `<div class="adm-toolbar">${tabs('vendas', [['abertos', 'Em aberto'], ['todos', 'Todos'], ['cancelados', 'Cancelados'], ['chat', 'Chat de pedidos', counts().chats]])}</div>${vendasChat()}` : `
       <div class="adm-toolbar">
-        ${tabs('vendas', [['abertos', 'Em aberto'], ['todos', 'Todos'], ['cancelados', 'Cancelados']])}
+        ${tabs('vendas', [['abertos', 'Em aberto'], ['todos', 'Todos'], ['cancelados', 'Cancelados'], ['chat', 'Chat de pedidos', counts().chats]])}
         <div class="adm-toolbar-right">
           <select class="adm-select" onchange="ImperadorAdmin.setView('vendasPeriodo', this.value)">${[['hoje', 'Hoje'], ['7d', 'Últimos 7 dias'], ['mes', 'Este mês'], ['tudo', 'Tudo']].map(([v, l]) => `<option value="${v}" ${view.vendasPeriodo === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
           ${!ownOnly && sellers.length ? `<select class="adm-select" onchange="ImperadorAdmin.setView('vendasVendedor', this.value)"><option value="">Todos os vendedores</option><option value="_none" ${view.vendasVendedor === '_none' ? 'selected' : ''}>Autoatendimento</option>${sellers.map(([id, n]) => `<option value="${esc(id)}" ${view.vendasVendedor === id ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>` : ''}
@@ -1145,7 +1188,64 @@ const ImperadorAdmin = (() => {
               <button class="adm-icon-btn" title="Detalhes" onclick="ImperadorAdmin.viewOrder('${esc(o.id)}')">${I('eye', 16)}</button>
               ${canChange && o.paymentStatus !== 'pago' ? `<button class="adm-btn adm-btn-ok adm-btn-sm" onclick="ImperadorAdmin.openPay('${esc(o.id)}')">${I('money', 15)} Receber</button>` : ''}
             </td></tr>`;
-        }).join('')}</tbody></table></div>` : empty('cart', 'Nenhum pedido neste filtro')}</div>`;
+        }).join('')}</tbody></table></div>` : empty('cart', 'Nenhum pedido neste filtro')}</div>`}`;
+  }
+
+  function vendasChat() {
+    const chats = (S().chats || []).slice().sort((a, b) => (a.status === 'aberto') === (b.status === 'aberto')
+      ? String(b.updatedAt).localeCompare(String(a.updatedAt)) : (a.status === 'aberto' ? -1 : 1));
+    if (!chats.length) return `<div class="adm-card">${empty('chat', 'Nenhuma conversa ainda', 'Os clientes pedem pelo botão “Pedir pelo chat” no site, no cardápio e no tablet. As conversas aparecem aqui na hora.')}</div>`;
+    const sel = chats.find(c => c.id === view.chatSel) || chats[0];
+    const orders = (S().orders || []).filter(o => (sel.orderIds || []).includes(o.id));
+    const label = { cliente: sel.name, bot: 'Assistente', atendente: '' };
+    return `
+      <div class="adm-chat">
+        <aside class="adm-chat-list">${chats.map(c => {
+          const last = (c.messages || []).filter(m => m.from !== 'bot').slice(-1)[0] || (c.messages || []).slice(-1)[0] || {};
+          return `<button class="${c.id === sel.id ? 'active' : ''} ${c.status !== 'aberto' ? 'closed' : ''}" onclick="ImperadorAdmin.chatOpen('${esc(c.id)}')">
+            <span class="adm-avatar sm">${esc((c.name || '?').charAt(0).toUpperCase())}</span>
+            <div><strong>${esc(c.name)} <small>· ${esc(c.table)}</small></strong><p>${esc(last.text || '')}</p></div>
+            <span class="adm-chat-meta"><time>${String(c.updatedAt || '').slice(11, 16)}</time>${c.unreadStaff ? `<span class="adm-badge warn">${c.unreadStaff}</span>` : ''}</span>
+          </button>`;
+        }).join('')}</aside>
+        <section class="adm-chat-main">
+          <header>
+            <div><strong>${esc(sel.name)}</strong><small>${esc(sel.table)} · início ${fmtDate(sel.createdAt)}${sel.status !== 'aberto' ? ' · encerrada' : ''}</small></div>
+            ${sel.status === 'aberto' ? `<button class="adm-btn adm-btn-ghost adm-btn-sm" onclick="ImperadorAdmin.chatClose('${esc(sel.id)}')">${I('check-circle', 15)} Encerrar atendimento</button>` : ''}
+          </header>
+          ${orders.length ? `<div class="adm-chat-orders">${orders.map(o => `
+            <div class="adm-chat-order"><div><strong>${esc(o.id)}</strong><small>${(o.items || []).map(l => `${l.qty}× ${esc(l.name)}`).join(', ')}</small></div>
+              <strong>${brl(o.total)}</strong>${statusPill(o.orderStatus === 'cancelado' ? 'cancelado' : o.paymentStatus)}
+              <button class="adm-icon-btn" title="Detalhes" onclick="ImperadorAdmin.viewOrder('${esc(o.id)}')">${I('eye', 16)}</button>
+              ${o.paymentStatus !== 'pago' && o.orderStatus !== 'cancelado' ? `<button class="adm-btn adm-btn-ok adm-btn-sm" onclick="ImperadorAdmin.openPay('${esc(o.id)}')">${I('money', 15)} Cobrar</button>` : ''}
+            </div>`).join('')}</div>` : ''}
+          <div class="adm-chat-msgs" id="admChatMsgs">${(sel.messages || []).map(m => `
+            <div class="adm-cmsg ${m.from}">
+              <span>${esc(m.from === 'atendente' ? (m.userName || 'Atendente') : label[m.from])} · ${String(m.at || '').slice(11, 16)}</span>
+              <p>${esc(m.text)}${m.orderId ? ` <b>${esc(m.orderId)}</b>` : ''}</p>
+              ${m.proposal ? `<small>${m.proposal.map(i => `${i.qty}× ${esc(i.name)}`).join(', ')}</small>` : ''}
+            </div>`).join('')}</div>
+          ${sel.status === 'aberto' ? `<form class="adm-chat-reply" onsubmit="event.preventDefault(); ImperadorAdmin.chatSend('${esc(sel.id)}')">
+            <input id="admChatText" maxlength="400" placeholder="Responder ${esc(sel.name)}... (ex.: Já estou levando!)" autocomplete="off" />
+            <button class="adm-btn adm-btn-primary" type="submit">${I('send', 16)} Enviar</button>
+          </form>` : ''}
+        </section>
+      </div>`;
+  }
+  function chatOpen(id) {
+    view.chatSel = id;
+    const c = (S().chats || []).find(x => x.id === id);
+    if (c && c.unreadStaff) act('chat_responder', { chatId: id, text: '' }, { close: false, silent: true });
+    else rerender();
+  }
+  function chatSend(id) {
+    const text = val('admChatText').trim();
+    if (!text) return;
+    view.chatSel = id;
+    act('chat_responder', { chatId: id, text }, { close: false, silent: true });
+  }
+  function chatClose(id) {
+    if (confirm('Encerrar este atendimento? O cliente verá uma mensagem de despedida.')) act('chat_responder', { chatId: id, text: '', close: true }, { close: false });
   }
 
   function viewOrder(id) {
@@ -1291,8 +1391,20 @@ const ImperadorAdmin = (() => {
     const stats = sellerStats(view.comissoesMes);
     const tot = stats.reduce((s, x) => s + x.subtotal, 0);
     const com = stats.reduce((s, x) => s + x.commission, 0);
-    const best = stats.filter(s => s.id)[0];
+    const best = stats.filter(s => s.id && s.subtotal > 0)[0];
+    const rule = commissionRule();
+    const editRule = can('comissoes', 'edit');
     return `
+      <div class="adm-card adm-rule">
+        <div class="adm-rule-text"><h3>${I('percent', 18)} Regra de comissão</h3>
+          <p>${rule.mode === 'unica' ? `Todos os vendedores recebem <strong>${pct(rule.percent)}</strong> sobre os itens vendidos.` : 'Cada vendedor tem o seu próprio percentual, definido em IAM → Usuários.'}</p></div>
+        ${editRule ? `<div class="adm-rule-form">
+          <label class="adm-route"><input type="radio" name="cmMode" value="unica" ${rule.mode === 'unica' ? 'checked' : ''} onchange="document.getElementById('cmPct').disabled=false" /><div><strong>Igual para todos</strong></div></label>
+          <label class="adm-route"><input type="radio" name="cmMode" value="individual" ${rule.mode !== 'unica' ? 'checked' : ''} onchange="document.getElementById('cmPct').disabled=true" /><div><strong>Individual por vendedor</strong></div></label>
+          <div class="adm-input-unit"><input id="cmPct" class="adm-select" type="number" min="0" max="100" step="0.1" value="${esc(rule.percent)}" ${rule.mode !== 'unica' ? 'disabled' : ''} style="width:90px" /><span>%</span></div>
+          <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.act('comissao_config',{mode:document.querySelector('input[name=cmMode]:checked').value,percent:document.getElementById('cmPct').value},{close:false})">${I('save', 16)} Salvar regra</button>
+        </div>` : ''}
+      </div>
       <div class="adm-toolbar"><div class="adm-toolbar-left">${I('calendar', 18)} ${monthOptions('comissoesMes')}</div></div>
       <div class="adm-kpis">
         ${kpi('Vendido no mês', brl(tot), `${stats.reduce((s, x) => s + x.orders, 0)} pedidos`, 'cart')}
@@ -1307,7 +1419,7 @@ const ImperadorAdmin = (() => {
           <td class="r">${s.id ? pct(s.pct) : '—'}</td><td class="r ok"><strong>${s.id ? brl(s.commission) : '—'}</strong></td>
           <td class="r"><button class="adm-btn adm-btn-ghost adm-btn-sm" onclick="ImperadorAdmin.sellerDetail('${esc(s.id)}')">${I('eye', 15)} Detalhar</button></td></tr>`).join('')}</tbody></table></div>`
         : empty('percent', 'Sem vendas neste mês')}</div>
-      ${can('usuarios', 'edit') ? `<div class="adm-note">${I('info', 16)} O percentual de comissão de cada vendedor é definido em <a href="javascript:void(0)" onclick="ImperadorApp.setAdminTab('usuarios')">Usuários</a>.</div>` : ''}`;
+      ${can('usuarios', 'edit') && rule.mode !== 'unica' ? `<div class="adm-note">${I('info', 16)} O percentual de cada vendedor é definido em <a href="javascript:void(0)" onclick="ImperadorApp.setAdminTab('usuarios')">IAM → Usuários</a>.</div>` : ''}`;
   }
 
   function sellerDetail(id) {
@@ -1467,21 +1579,163 @@ const ImperadorAdmin = (() => {
     return on.map(m => `<span class="adm-perm-dot lv-${p[m.id]}" title="${esc(m.label)}: ${LEVEL_LABEL[p[m.id]]}">${I(m.icon, 14)}</span>`).join('') || '<span class="muted">Nenhum módulo</span>';
   }
 
+  function onlineDot(ts) {
+    return ts && Date.now() - ts < 5 * 60000 ? '<span class="adm-online" title="Online agora"></span>' : '';
+  }
+
   function mUsuarios() {
     const users = meta.users || [];
+    const devices = ((S().iam || {}).devices || []);
+    const online = devices.filter(d => { const p = (meta.devicesOnline || {})[d.id]; return p && Date.now() - p.lastSeen < 90000; }).length;
+    const t = tabs('iam', [['usuarios', 'Usuários', 0], ['perfis', 'Perfis'], ['tablets', `Tablets${devices.length ? ` (${online}/${devices.length} online)` : ''}`, devices.filter(d => d.status === 'pendente').length], ['sessoes', 'Sessões ativas']]);
+    if (view.iam === 'perfis') return t + iamPerfis();
+    if (view.iam === 'tablets') return t + iamTablets();
+    if (view.iam === 'sessoes') return t + iamSessoes();
     const edit = can('usuarios', 'edit');
+    const rule = commissionRule();
     return `
-      <div class="adm-toolbar"><div class="adm-toolbar-left"><span class="muted">${users.length} usuário(s)</span></div>
+      <div class="adm-toolbar">${t}
         ${edit ? `<button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.openUser()">${I('plus', 16)} Novo usuário</button>` : ''}</div>
       <div class="adm-card adm-card-flush"><div class="adm-table-wrap"><table class="adm-table">
         <thead><tr><th>Usuário</th><th>Perfil</th><th>Módulos liberados</th><th class="r">Comissão</th><th>Status</th><th></th></tr></thead>
         <tbody>${users.map(u => `<tr class="${u.active ? '' : 'row-off'}">
-          <td><div class="adm-usercell"><span class="adm-avatar sm">${esc(u.name.charAt(0).toUpperCase())}</span><div><strong>${esc(u.name)}</strong><small>@${esc(u.username)}</small></div></div></td>
+          <td><div class="adm-usercell"><span class="adm-avatar sm">${esc(u.name.charAt(0).toUpperCase())}${onlineDot(u.lastSeen)}</span><div><strong>${esc(u.name)}</strong><small>@${esc(u.username)}</small></div></div></td>
           <td>${esc(u.roleLabel)}</td><td><div class="adm-perm-dots">${permSummary(u)}</div></td>
-          <td class="r">${pct(u.commissionPercent)}</td>
+          <td class="r">${rule.mode === 'unica' ? `${pct(rule.percent)} <small>regra única</small>` : pct(u.commissionPercent)}</td>
           <td>${u.active ? (u.mustChange ? '<span class="adm-pill warn">Senha provisória</span>' : '<span class="adm-pill ok">Ativo</span>') : '<span class="adm-pill bad">Inativo</span>'}</td>
           <td class="r">${edit ? `<button class="adm-icon-btn" onclick="ImperadorAdmin.openUser('${esc(u.id)}')">${I('edit', 16)}</button>` : ''}</td></tr>`).join('')}</tbody></table></div></div>
       <div class="adm-legend"><span class="adm-perm-dot lv-view">${I('eye', 14)}</span> Ver <span class="adm-perm-dot lv-use">${I('check', 14)}</span> Usar <span class="adm-perm-dot lv-edit">${I('edit', 14)}</span> Editar</div>`;
+  }
+
+  function iamPerfis() {
+    const roles = Object.entries(meta.roles || {});
+    const edit = can('usuarios', 'edit');
+    return `
+      <div class="adm-toolbar"><div class="adm-toolbar-left"><span class="muted">Perfis são modelos de permissão. Ao criar um usuário, ele recebe as permissões do perfil.</span></div>
+        ${edit ? `<button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.openRole()">${I('plus', 16)} Novo perfil</button>` : ''}</div>
+      <div class="adm-cards">${roles.map(([k, r]) => `
+        <div class="adm-card adm-role">
+          <div class="adm-role-top"><div><strong>${esc(r.label)}</strong><small>${r.builtin ? 'Perfil padrão' : 'Perfil personalizado'} · ${r.users || 0} usuário(s)</small></div>
+            ${edit && k !== 'admin' ? `<button class="adm-icon-btn" onclick="ImperadorAdmin.openRole('${esc(k)}')">${I('edit', 16)}</button>` : ''}</div>
+          <div class="adm-perm-dots">${k === 'admin' ? '<span class="adm-pill info">Acesso total</span>' : permSummary({ permissions: r.permissions })}</div>
+        </div>`).join('')}</div>`;
+  }
+
+  let roleDraft = null;
+  function openRole(key) {
+    const r = key ? (meta.roles || {})[key] : null;
+    roleDraft = { key: key || '', label: r ? r.label : '', permissions: Object.assign({}, r ? r.permissions : { dashboard: 'view' }), builtin: r ? r.builtin : false };
+    openModal({
+      title: r ? `Perfil · ${esc(r.label)}` : 'Novo perfil', icon: 'lock', size: 'xl',
+      subtitle: 'Defina o que este perfil pode ver, usar ou editar em cada módulo.',
+      body: `
+        <div class="adm-form-grid g2">
+          <label class="adm-field"><span>Nome do perfil</span><input id="rlLabel" value="${esc(roleDraft.label)}" placeholder="Ex.: Caixa, Barman, Gerente de turno" /></label>
+          ${r ? `<label class="adm-check" style="align-self:end"><input type="checkbox" id="rlApply" checked /> Aplicar também aos ${r.users || 0} usuário(s) deste perfil</label>` : ''}
+        </div>
+        <div class="adm-section-title"><h4>Permissões por módulo</h4></div>
+        <div id="rlPerms">${permMatrixFor(roleDraft, 'rolePerm', false)}</div>`,
+      footer: `${r && !r.builtin ? `<button class="adm-btn adm-btn-danger-ghost" onclick="ImperadorAdmin.deleteRole('${esc(key)}')">${I('trash', 16)} Excluir</button><span class="gm-foot-space"></span>` : ''}
+        <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.closeModal()">Cancelar</button>
+        <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.saveRole()">${I('save', 16)} Salvar perfil</button>`
+    });
+  }
+  function rolePerm(mod, lv) { roleDraft.permissions[mod] = lv; }
+  async function saveRole() {
+    try {
+      const data = await api('/api/roles/save', { key: roleDraft.key, label: val('rlLabel'), permissions: roleDraft.permissions, applyToUsers: checked('rlApply') });
+      applyServer(data); closeModal(); A().showToast(esc(data.message), 'emerald'); rerender();
+    } catch (e) { A().showToast(esc(e.message), 'danger'); }
+  }
+  async function deleteRole(key) {
+    if (!confirm('Excluir este perfil?')) return;
+    try {
+      const data = await api('/api/roles/delete', { key });
+      applyServer(data); closeModal(); A().showToast(esc(data.message), 'emerald'); rerender();
+    } catch (e) { A().showToast(esc(e.message), 'danger'); }
+  }
+
+  const MODE_LABEL = { mesa: 'Autoatendimento na mesa', garcom: 'Atendente / garçom', caixa: 'Caixa / balcão' };
+  const VIEW_LABEL = { tablet: 'Tablet da mesa', menu: 'Cardápio', home: 'Site', category: 'Cardápio', precos: 'Preços', admin: 'Painel' };
+  function ago(ts) {
+    if (!ts) return 'nunca';
+    const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+    if (s < 60) return 'agora';
+    if (s < 3600) return `há ${Math.round(s / 60)} min`;
+    if (s < 86400) return `há ${Math.round(s / 3600)} h`;
+    return `há ${Math.round(s / 86400)} dia(s)`;
+  }
+
+  function iamTablets() {
+    const devices = ((S().iam || {}).devices || []);
+    const pres = meta.devicesOnline || {};
+    const edit = can('usuarios', 'edit');
+    if (!devices.length) {
+      return `<div class="adm-card">${empty('tablet', 'Nenhum tablet cadastrado', 'No tablet, abra “Tablet da mesa” e toque na engrenagem no canto da tela para cadastrar. Ele aparece aqui para você liberar e escolher a mesa.')}</div>`;
+    }
+    return `
+      <div class="adm-note">${I('info', 16)} Para cadastrar um tablet novo: abra o <strong>Tablet da mesa</strong> no aparelho e toque na engrenagem no canto da tela. Depois libere aqui e escolha a mesa.</div>
+      <div class="adm-cards">${devices.map(d => {
+        const p = pres[d.id];
+        const isOn = p && Date.now() - p.lastSeen < 90000;
+        const who = !isOn ? '—' : p.userName ? `${esc(p.userName)} <small>(atendente logado)</small>` : (p.view === 'tablet' ? `Clientes da ${esc(p.table || d.table || 'mesa')}` : 'Visitante');
+        const st = d.blocked ? ['bad', 'Bloqueado'] : d.status === 'pendente' ? ['warn', 'Aguardando liberação'] : isOn ? ['ok', 'Online'] : ['', 'Offline'];
+        return `<div class="adm-card adm-device ${isOn ? 'on' : ''}">
+          <div class="adm-device-top"><span class="adm-device-icon">${I('tablet', 22)}</span>
+            <div><strong>${esc(d.name)}</strong><small>${esc(MODE_LABEL[d.mode] || d.mode)}</small></div>
+            <span class="adm-pill ${st[0]}">${st[1]}</span></div>
+          <dl class="adm-device-info">
+            <div><dt>Mesa</dt><dd>${esc(d.table || 'Livre')}</dd></div>
+            <div><dt>Quem está usando</dt><dd>${who}</dd></div>
+            <div><dt>Tela aberta</dt><dd>${isOn ? esc(VIEW_LABEL[p.view] || p.view) : '—'}</dd></div>
+            <div><dt>Itens no carrinho</dt><dd>${isOn ? p.cart : '—'}</dd></div>
+            <div><dt>Último sinal</dt><dd>${ago(p && p.lastSeen)}</dd></div>
+            <div><dt>Endereço</dt><dd>${esc((p && p.ip) || d.registeredIp || '—')}</dd></div>
+          </dl>
+          ${edit ? `<div class="adm-device-actions">
+            ${d.status === 'pendente' ? `<button class="adm-btn adm-btn-ok adm-btn-sm" onclick="ImperadorAdmin.openDevice('${esc(d.id)}', true)">${I('check', 15)} Liberar</button>` : ''}
+            <button class="adm-btn adm-btn-ghost adm-btn-sm" onclick="ImperadorAdmin.openDevice('${esc(d.id)}')">${I('settings', 15)} Configurar</button>
+          </div>` : ''}
+        </div>`;
+      }).join('')}</div>`;
+  }
+
+  function openDevice(id, approve) {
+    const d = ((S().iam || {}).devices || []).find(x => x.id === id);
+    if (!d) return;
+    const tables = S().tables || [];
+    openModal({
+      title: approve ? 'Liberar tablet' : 'Configurar tablet', subtitle: esc(d.name), icon: 'tablet', size: 'md',
+      body: `<div class="adm-form">
+        <label class="adm-field"><span>Nome</span><input id="dvN" value="${esc(d.name)}" /></label>
+        <label class="adm-field"><span>Uso do tablet</span><select id="dvM">${Object.entries(MODE_LABEL).map(([k, l]) => `<option value="${k}" ${d.mode === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+          <small>“Autoatendimento na mesa” trava o tablet na mesa escolhida e esconde o acesso ao painel.</small></label>
+        <label class="adm-field"><span>Mesa</span><select id="dvT"><option value="">— Livre —</option>${tables.map(t => `<option ${d.table === t.id ? 'selected' : ''}>${esc(t.id)}</option>`).join('')}</select></label>
+        <label class="adm-check"><input type="checkbox" id="dvB" ${d.blocked ? 'checked' : ''} /> Bloquear este tablet</label>
+      </div>`,
+      footer: `<button class="adm-btn adm-btn-danger-ghost" onclick="if(confirm('Remover este tablet?')) ImperadorAdmin.act('dispositivo_excluir',{id:'${esc(d.id)}'})">${I('trash', 16)} Remover</button><span class="gm-foot-space"></span>
+        <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.closeModal()">Cancelar</button>
+        <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.act('dispositivo_salvar',{id:'${esc(d.id)}',name:document.getElementById('dvN').value,mode:document.getElementById('dvM').value,table:document.getElementById('dvT').value,blocked:document.getElementById('dvB').checked,approve:true})">${I('check', 16)} ${approve ? 'Liberar tablet' : 'Salvar'}</button>`
+    });
+  }
+
+  function iamSessoes() {
+    const list = meta.sessions || [];
+    const devs = Object.fromEntries(((S().iam || {}).devices || []).map(d => [d.id, d.name]));
+    const edit = can('usuarios', 'edit');
+    if (!list.length) return `<div class="adm-card">${empty('user', 'Nenhuma sessão ativa')}</div>`;
+    return `<div class="adm-card adm-card-flush"><div class="adm-table-wrap"><table class="adm-table">
+      <thead><tr><th>Usuário</th><th>Aparelho</th><th>Endereço</th><th>Entrou</th><th>Última atividade</th><th></th></tr></thead>
+      <tbody>${list.map(x => `<tr>
+        <td><strong>${esc(x.userName)}</strong>${me() && x.userId === me().id ? '<small>você</small>' : ''}</td>
+        <td>${x.device ? esc(devs[x.device] || x.device) : '<span class="muted">Navegador</span>'}</td>
+        <td>${esc(x.ip)}</td><td>${fmtDate(new Date(x.since - new Date().getTimezoneOffset() * 60000).toISOString())}</td><td>${ago(x.lastSeen)}</td>
+        <td class="r">${edit && !(me() && x.userId === me().id) ? `<button class="adm-btn adm-btn-danger-ghost adm-btn-sm" onclick="ImperadorAdmin.endSessions('${esc(x.userId)}')">${I('logout', 15)} Encerrar</button>` : ''}</td></tr>`).join('')}</tbody></table></div></div>`;
+  }
+  async function endSessions(userId) {
+    if (!confirm('Encerrar todas as sessões deste usuário? Ele precisará entrar de novo.')) return;
+    try { const data = await api('/api/sessions/end', { userId }); applyServer(data); A().showToast(esc(data.message), 'emerald'); rerender(); }
+    catch (e) { A().showToast(esc(e.message), 'danger'); }
   }
 
   let userDraft = null;
@@ -1497,7 +1751,7 @@ const ImperadorAdmin = (() => {
           <label class="adm-field"><span>Nome *</span><input id="usName" value="${esc(userDraft.name)}" /></label>
           <label class="adm-field"><span>Usuário (login) *</span><input id="usLogin" value="${esc(userDraft.username)}" autocapitalize="none" spellcheck="false" /></label>
           <label class="adm-field"><span>${u ? 'Nova senha (opcional)' : 'Senha provisória *'}</span><input id="usPass" type="text" autocomplete="new-password" placeholder="mín. 8 caracteres" /><small>A pessoa troca no primeiro acesso.</small></label>
-          <label class="adm-field"><span>Comissão sobre vendas (%)</span><input id="usCom" type="number" min="0" max="100" step="0.1" value="${esc(userDraft.commissionPercent)}" /></label>
+          <label class="adm-field"><span>Comissão sobre vendas (%)</span><input id="usCom" type="number" min="0" max="100" step="0.1" value="${esc(userDraft.commissionPercent)}" />${commissionRule().mode === 'unica' ? `<small>Regra única ativa: todos recebem ${pct(commissionRule().percent)} (mude em Vendedores).</small>` : ''}</label>
           <label class="adm-field span2"><span>Perfil</span><select id="usRole" onchange="ImperadorAdmin.userRole(this.value)">${Object.entries(roles).map(([k, r]) => `<option value="${k}" ${userDraft.role === k ? 'selected' : ''}>${esc(r.label)}</option>`).join('')}</select></label>
           <label class="adm-check span2"><input type="checkbox" id="usActive" ${userDraft.active ? 'checked' : ''} /> Usuário ativo (pode entrar no sistema)</label>
         </div>
@@ -1508,16 +1762,16 @@ const ImperadorAdmin = (() => {
         <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.saveUser()">${I('save', 16)} Salvar usuário</button>`
     });
   }
-  function permMatrix() {
-    const admin = userDraft.role === 'admin';
+  function permMatrixFor(draft, setter, admin) {
     return `<div class="adm-perm-table ${admin ? 'adm-readonly' : ''}">
       <div class="adm-perm-head"><span>Módulo</span>${Object.keys(LEVEL).map(l => `<span>${LEVEL_LABEL[l]}</span>`).join('')}</div>
       ${MODULES.map(m => `<div class="adm-perm-row">
         <span class="adm-perm-mod">${I(m.icon, 16)} <span><strong>${esc(m.label)}</strong><small>${esc(m.desc)}</small></span></span>
-        ${Object.keys(LEVEL).map(l => `<label class="adm-radio"><input type="radio" name="perm_${m.id}" value="${l}" ${(admin ? 'edit' : (userDraft.permissions[m.id] || 'none')) === l ? 'checked' : ''} onchange="ImperadorAdmin.userPerm('${m.id}','${l}')" /><span></span></label>`).join('')}
+        ${Object.keys(LEVEL).map(l => `<label class="adm-radio"><input type="radio" name="${setter}_${m.id}" value="${l}" ${(admin ? 'edit' : (draft.permissions[m.id] || 'none')) === l ? 'checked' : ''} onchange="ImperadorAdmin.${setter}('${m.id}','${l}')" /><span></span></label>`).join('')}
       </div>`).join('')}
     </div>${admin ? `<div class="adm-note">${I('info', 16)} Administradores têm acesso total a todos os módulos.</div>` : ''}`;
   }
+  function permMatrix() { return permMatrixFor(userDraft, 'userPerm', userDraft.role === 'admin'); }
   function userRole(role) {
     userDraft.role = role;
     userDraft.permissions = Object.assign({}, ((meta.roles || {})[role] || {}).permissions);
@@ -1554,15 +1808,21 @@ const ImperadorAdmin = (() => {
     return t + legacy('site', html);
   }
 
+  function afterRender() {
+    const box = document.getElementById('admChatMsgs');
+    if (box) box.scrollTop = box.scrollHeight;
+  }
+
   return {
-    render, isLoggedIn, me, can, level, applyServer, refresh, sessionInvalid: expire, setView, act, closeModal, openModal,
+    render, afterRender, isLoggedIn, me, can, level, applyServer, refresh, sessionInvalid: expire, setView, act, closeModal, openModal,
     doLogin, logout, togglePass, openPasswordModal, savePassword,
     openReceipt, dSet, rowSet, rowNP, rowProduct, rowAdd, rowDel, saveReceipt, deleteReceipt, viewReceipt, reviewReceipt,
     openProduct, saveProduct, openTransfer, trRoute, trPreview, doTransfer, openAdjust,
     openRecipe, rcSet, rcRow, rcAdd, rcDel, rcUseSuggested, saveRecipe,
     openPdv, pdvFilter, pdvAdd, pdvQty, pdvSet, pdvFinish, viewOrder, cancelOrder, openPay,
     sellerDetail, openExpense, openEmployee, saveEmployee,
-    openUser, userRole, userPerm, saveUser, deleteUser
+    openUser, userRole, userPerm, saveUser, deleteUser,
+    chatOpen, chatSend, chatClose, openRole, rolePerm, saveRole, deleteRole, openDevice, endSessions
   };
 })();
 window.ImperadorAdmin = ImperadorAdmin;
