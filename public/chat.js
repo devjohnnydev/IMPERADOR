@@ -8,6 +8,7 @@ const ImperadorChat = (() => {
   const KEY = 'IMPERADOR_CHAT_V1';
   const A = () => ImperadorApp._internal;
   const esc = (v) => A().escapeHtml(v == null ? '' : v);
+  const jsq = (v) => esc(JSON.stringify(String(v == null ? '' : v)));
   const brl = (v) => A().formatBRL(Number(v) || 0);
   const I = (n, s = 18) => ImperadorIcons.svg(n, s);
 
@@ -152,7 +153,7 @@ const ImperadorChat = (() => {
       extra += m.options.map(group => `
         <div class="ch-options">
           <small>${esc(group.text)}</small>
-          ${group.options.map(o => `<button onclick="ImperadorChat.pick('${esc(o.itemId)}', ${Number(group.qty) || 1})"><span>${esc(o.name)}</span><strong>${brl(o.price)}</strong></button>`).join('')}
+          ${group.options.map(o => `<button onclick="ImperadorChat.pick(${jsq(o.itemId)}, ${Number(group.qty) || 1})"><span>${esc(o.name)}</span><strong>${brl(o.price)}</strong></button>`).join('')}
         </div>`).join('');
     }
     return `

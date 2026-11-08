@@ -11,6 +11,7 @@ Usuários, perfis e permissões do painel do Imperador Lounge Bar.
 import hashlib
 import hmac
 import json
+import os
 import re
 import secrets
 import threading
@@ -18,11 +19,14 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import storage
+
 BASE_DIR = Path(__file__).resolve().parent
 AUTH_FILE = BASE_DIR / "data" / "admin_auth.json"
 
 USUARIO_PADRAO = "admin"
-SENHA_PADRAO = "imperador123"
+# No Railway, defina ADMIN_INITIAL_PASSWORD para não usar a senha padrão pública
+SENHA_PADRAO = (os.environ.get("ADMIN_INITIAL_PASSWORD") or "imperador123").strip()
 
 SESSAO_SEGUNDOS = 12 * 60 * 60
 MAX_TENTATIVAS = 5
@@ -96,18 +100,15 @@ def _usuario_padrao() -> Dict:
 
 
 def _salvar(dados: Dict) -> None:
-    AUTH_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = AUTH_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(dados, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(AUTH_FILE)
+    storage.store().auth_salvar(dados)
 
 
 def _carregar() -> Dict:
-    if not AUTH_FILE.exists():
+    dados = storage.store().auth_carregar()
+    if dados is None:
         dados = {"users": [_usuario_padrao()]}
         _salvar(dados)
         return dados
-    dados = json.loads(AUTH_FILE.read_text(encoding="utf-8"))
     alterou = False
     for i, u in enumerate(dados.get("users", [])):
         # Migração da versão de usuário único

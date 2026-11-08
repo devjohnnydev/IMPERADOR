@@ -33,6 +33,8 @@ const ImperadorAdmin = (() => {
   const A = () => ImperadorApp._internal;
   const S = () => A().getState();
   const esc = (v) => A().escapeHtml(v == null ? '' : v);
+  // Valor seguro para usar como argumento dentro de onclick="..." (string JSON + HTML escapado)
+  const jsq = (v) => esc(JSON.stringify(String(v == null ? '' : v)));
   const brl = (v) => A().formatBRL(Number(v) || 0);
   const I = (name, size = 18, cls = '') => ImperadorIcons.svg(name, size, cls);
   const num = (v, d = 0) => (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -237,7 +239,7 @@ const ImperadorAdmin = (() => {
     const bg = (S().home && S().home.heroImage) || s.heroCoverUrl || '';
     return `
       <div class="lg-screen">
-        <div class="lg-bg" style="background-image:url('${esc(bg)}')"></div>
+        <div class="lg-bg" style="background-image:url(${jsq(bg)})"></div>
         <form class="lg-card" onsubmit="event.preventDefault(); ImperadorAdmin.doLogin()">
           <div class="lg-brand"><span class="lg-logo">${I('crown', 26)}</span><div><strong>${esc(s.brandName || 'Imperador')}</strong><small>Área restrita</small></div></div>
           <h1>Entrar no painel</h1>
@@ -554,7 +556,7 @@ const ImperadorAdmin = (() => {
         parts.push(`<div class="adm-card adm-card-alert"><div class="adm-card-head"><h3>${I('bell', 18)} Chamados das mesas</h3><span class="adm-badge warn">${calls.length}</span></div>
           <div class="adm-calls">${calls.map(x => `
             <div class="adm-call"><div><strong>${esc(x.tableId)}</strong><small>${esc(x.message)} · ${esc(x.createdAt)}</small></div>
-            <button class="adm-btn adm-btn-sm adm-btn-ok" onclick="ImperadorAdmin.act('chamado_resolver',{id:'${esc(x.id)}'},{close:false})">${I('check', 15)} Atendido</button></div>`).join('')}
+            <button class="adm-btn adm-btn-sm adm-btn-ok" onclick="ImperadorAdmin.act('chamado_resolver',{id:${jsq(x.id)}},{close:false})">${I('check', 15)} Atendido</button></div>`).join('')}
           </div></div>`);
       }
     }
@@ -761,7 +763,7 @@ const ImperadorAdmin = (() => {
             <button class="adm-btn adm-btn-primary adm-btn-block" onclick="ImperadorAdmin.tvCall()">${I('megaphone', 16)} Chamar agora</button>
           </div>
           ${call ? `<div class="adm-note">${I('info', 16)} <span style="flex:1">Última chamada: <strong>${esc(call.name)}</strong> → ${esc(call.place)} às ${String(call.at).slice(11, 16)} (por ${esc(call.by)}).</span>
-            <button class="adm-btn adm-btn-ghost adm-btn-sm" onclick="ImperadorAdmin.act('tv_chamar',{name:'${esc(call.name)}',place:'${esc(call.place)}',message:'${esc(call.message || '')}'},{close:false})">${I('refresh', 14)} Repetir</button></div>` : ''}
+            <button class="adm-btn adm-btn-ghost adm-btn-sm" onclick="ImperadorAdmin.act('tv_chamar',{name:${jsq(call.name)},place:${jsq(call.place)},message:${jsq(call.message || '')}},{close:false})">${I('refresh', 14)} Repetir</button></div>` : ''}
         </div>` : ''}
         <div class="adm-card"><div class="adm-card-head"><h3>${I('sparkles', 18)} Promoções na TV</h3></div>
           <p class="adm-muted-p">Os textos ativos passam em faixa na parte de baixo da TV.</p>
@@ -898,9 +900,9 @@ const ImperadorAdmin = (() => {
           <td>${statusPill(n.status)}</td>
           <td>${esc(n.createdByName || '')}<small>${fmtDate(n.createdAt)}</small></td>
           <td class="r nowrap">
-            <button class="adm-icon-btn" title="Ver" onclick="ImperadorAdmin.viewReceipt('${esc(n.id)}')">${I('eye', 16)}</button>
-            ${editable ? `<button class="adm-icon-btn" title="Editar" onclick="ImperadorAdmin.openReceipt('${esc(n.id)}')">${I('edit', 16)}</button>
-            <button class="adm-icon-btn danger" title="Excluir" onclick="ImperadorAdmin.deleteReceipt('${esc(n.id)}')">${I('trash', 16)}</button>` : ''}
+            <button class="adm-icon-btn" title="Ver" onclick="ImperadorAdmin.viewReceipt(${jsq(n.id)})">${I('eye', 16)}</button>
+            ${editable ? `<button class="adm-icon-btn" title="Editar" onclick="ImperadorAdmin.openReceipt(${jsq(n.id)})">${I('edit', 16)}</button>
+            <button class="adm-icon-btn danger" title="Excluir" onclick="ImperadorAdmin.deleteReceipt(${jsq(n.id)})">${I('trash', 16)}</button>` : ''}
           </td></tr>`;
       }).join('')}</tbody></table></div>`;
   }
@@ -1093,7 +1095,7 @@ const ImperadorAdmin = (() => {
           <div class="adm-approval-top"><div><strong>NF ${esc(n.number)}</strong><small>${esc(n.supplier)}</small></div><strong class="adm-approval-value">${brl(n.noteValue)}</strong></div>
           <div class="adm-approval-meta"><span>${I('box', 14)} ${(n.items || []).length} item(ns)</span><span>${I('user', 14)} ${esc(n.createdByName)}</span><span>${I('calendar', 14)} ${fmtDay(n.receivedDate)}</span></div>
           ${div ? `<div class="adm-pill warn">${I('alert', 13)} ${n.hasQtyDivergence ? 'Quantidade divergente' : ''}${n.hasQtyDivergence && Math.abs(n.valueDivergence) > 0.009 ? ' · ' : ''}${Math.abs(n.valueDivergence) > 0.009 ? 'Valor diferente da soma' : ''}</div>` : `<div class="adm-pill ok">${I('check', 13)} Conferência sem divergências</div>`}
-          <button class="adm-btn adm-btn-primary adm-btn-block" onclick="ImperadorAdmin.reviewReceipt('${esc(n.id)}')">${I('clipboard-check', 16)} Analisar</button>
+          <button class="adm-btn adm-btn-primary adm-btn-block" onclick="ImperadorAdmin.reviewReceipt(${jsq(n.id)})">${I('clipboard-check', 16)} Analisar</button>
         </div>`;
       }).join('')}</div>` : empty('check-circle', 'Nenhuma nota aguardando', 'Tudo aprovado por aqui.'))
         : `<div class="adm-card adm-card-flush">${receiptsTable(done, 'historico')}</div>`}`;
@@ -1106,8 +1108,8 @@ const ImperadorAdmin = (() => {
       title: `Aprovar entrada · NF ${esc(n.number)}`, subtitle: `${esc(n.supplier)} — os itens conferidos entram no depósito e atualizam o custo médio.`, icon: 'clipboard-check', size: 'xl',
       body: receiptDetail(n, true) + `<label class="adm-field"><span>Observação (obrigatória para rejeitar)</span><textarea id="rvNote" rows="2"></textarea></label>`,
       footer: `<button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.closeModal()">Fechar</button>
-               <button class="adm-btn adm-btn-danger" onclick="ImperadorAdmin.act('nota_analisar',{id:'${esc(n.id)}',decision:'rejeitar',note:document.getElementById('rvNote').value})">${I('x-circle', 16)} Rejeitar</button>
-               <button class="adm-btn adm-btn-ok" onclick="ImperadorAdmin.act('nota_analisar',{id:'${esc(n.id)}',decision:'aprovar',note:document.getElementById('rvNote').value})">${I('check-circle', 16)} Aprovar e lançar no estoque</button>`
+               <button class="adm-btn adm-btn-danger" onclick="ImperadorAdmin.act('nota_analisar',{id:${jsq(n.id)},decision:'rejeitar',note:document.getElementById('rvNote').value})">${I('x-circle', 16)} Rejeitar</button>
+               <button class="adm-btn adm-btn-ok" onclick="ImperadorAdmin.act('nota_analisar',{id:${jsq(n.id)},decision:'aprovar',note:document.getElementById('rvNote').value})">${I('check-circle', 16)} Aprovar e lançar no estoque</button>`
     });
   }
 
@@ -1170,10 +1172,10 @@ const ImperadorAdmin = (() => {
             <td class="r">${brl(p.avgCost)}</td>
             <td class="r">${brl(tot * (Number(p.avgCost) || 0))}</td>
             <td class="r nowrap">
-              ${can('estoque', 'use') ? `<button class="adm-btn adm-btn-ghost adm-btn-sm" onclick="ImperadorAdmin.openTransfer('${esc(p.id)}')">${I('transfer', 15)} Transferir</button>` : ''}
-              ${can('produtos', 'edit') && !soldIds.has(p.id) ? `<button class="adm-icon-btn" title="Vender no cardápio" onclick="ImperadorAdmin.openSellItem('${esc(p.id)}')">${I('tag', 16)}</button>` : ''}
-              ${can('estoque', 'edit') ? `<button class="adm-icon-btn" title="Ajuste / inventário" onclick="ImperadorAdmin.openAdjust('${esc(p.id)}')">${I('layers', 16)}</button>
-              <button class="adm-icon-btn" title="Editar produto" onclick="ImperadorAdmin.openProduct('${esc(p.id)}')">${I('edit', 16)}</button>` : ''}
+              ${can('estoque', 'use') ? `<button class="adm-btn adm-btn-ghost adm-btn-sm" onclick="ImperadorAdmin.openTransfer(${jsq(p.id)})">${I('transfer', 15)} Transferir</button>` : ''}
+              ${can('produtos', 'edit') && !soldIds.has(p.id) ? `<button class="adm-icon-btn" title="Vender no cardápio" onclick="ImperadorAdmin.openSellItem(${jsq(p.id)})">${I('tag', 16)}</button>` : ''}
+              ${can('estoque', 'edit') ? `<button class="adm-icon-btn" title="Ajuste / inventário" onclick="ImperadorAdmin.openAdjust(${jsq(p.id)})">${I('layers', 16)}</button>
+              <button class="adm-icon-btn" title="Editar produto" onclick="ImperadorAdmin.openProduct(${jsq(p.id)})">${I('edit', 16)}</button>` : ''}
             </td></tr>`;
         }).join('')}</tbody></table></div>` : empty('box', 'Nenhum produto encontrado')}</div>`;
   }
@@ -1213,7 +1215,7 @@ const ImperadorAdmin = (() => {
     return `
       <div class="adm-note">${I('info', 16)} <span>A sugestão considera o <strong>consumo médio dos últimos 7 dias</strong> (vendas e perdas) para cobrir <strong>${COVER_DAYS} dias</strong>, mais o estoque mínimo. Ajuste as quantidades no pedido antes de enviar.</span></div>
       ${edit && Object.keys(groups).length ? `<div class="adm-supplier-btns">${Object.entries(groups).map(([sup, rs]) => `
-        <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.poFromSupplier('${esc(sup)}')">${I('truck', 16)} Pedido para <strong>${esc(sup)}</strong> <span class="adm-badge warn">${rs.length}</span></button>`).join('')}</div>` : ''}
+        <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.poFromSupplier(${jsq(sup)})">${I('truck', 16)} Pedido para <strong>${esc(sup)}</strong> <span class="adm-badge warn">${rs.length}</span></button>`).join('')}</div>` : ''}
       <div class="adm-toolbar">
         <label class="adm-check"><input type="checkbox" ${view.reposicaoTodos ? 'checked' : ''} onchange="ImperadorAdmin.setView('reposicaoTodos', this.checked)" /> Mostrar todos os produtos</label>
         ${edit ? `<button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.poFromSelection()">${I('plus', 16)} Gerar pedido com selecionados</button>` : ''}
@@ -1221,7 +1223,7 @@ const ImperadorAdmin = (() => {
       <div class="adm-card adm-card-flush">${show.length ? `<div class="adm-table-wrap"><table class="adm-table">
         <thead><tr>${edit ? '<th></th>' : ''}<th>Produto</th><th>Fornecedor</th><th class="r">Estoque total</th><th class="r">Mínimo</th><th class="r">Consumo/dia</th><th class="r">Dura</th><th class="r">Comprar</th><th class="r">Custo estimado</th></tr></thead>
         <tbody>${show.map(r => `<tr class="${r.need > 0 ? 'row-warn' : ''}">
-          ${edit ? `<td><input type="checkbox" class="adm-cb" ${restockSel.has(r.p.id) || (!restockSel.size && r.need > 0) ? 'checked' : ''} onchange="ImperadorAdmin.restockToggle('${esc(r.p.id)}', this.checked)" /></td>` : ''}
+          ${edit ? `<td><input type="checkbox" class="adm-cb" ${restockSel.has(r.p.id) || (!restockSel.size && r.need > 0) ? 'checked' : ''} onchange="ImperadorAdmin.restockToggle(${jsq(r.p.id)}, this.checked)" /></td>` : ''}
           <td><strong>${esc(r.p.name)}</strong><small>${esc(r.p.category || '')} · ${esc(r.p.unit)}</small></td>
           <td>${esc(r.supplier || '—')}</td>
           <td class="r ${r.total <= r.min ? 'bad' : ''}">${qtyFmt(r.total)}</td><td class="r">${qtyFmt(r.min)}</td>
@@ -1257,8 +1259,8 @@ const ImperadorAdmin = (() => {
           <td>${poPill(pc.status)}${pc.sentAt ? `<small>enviado ${fmtDate(pc.sentAt)}</small>` : ''}</td>
           <td>${pc.expectedDate ? fmtDay(pc.expectedDate) : '—'}</td>
           <td class="r nowrap">
-            <button class="adm-icon-btn" title="Ver / enviar" onclick="ImperadorAdmin.sendPO('${esc(pc.id)}')">${I('send', 16)}</button>
-            ${edit && pc.status === 'rascunho' ? `<button class="adm-icon-btn" title="Editar" onclick="ImperadorAdmin.openPO('${esc(pc.id)}')">${I('edit', 16)}</button>` : ''}
+            <button class="adm-icon-btn" title="Ver / enviar" onclick="ImperadorAdmin.sendPO(${jsq(pc.id)})">${I('send', 16)}</button>
+            ${edit && pc.status === 'rascunho' ? `<button class="adm-icon-btn" title="Editar" onclick="ImperadorAdmin.openPO(${jsq(pc.id)})">${I('edit', 16)}</button>` : ''}
           </td></tr>`).join('')}</tbody></table></div>`
         : empty('truck', 'Nenhum pedido de compra', 'Use a aba Reposição para gerar pedidos a partir do que precisa repor.')}</div>`;
   }
@@ -1288,7 +1290,7 @@ const ImperadorAdmin = (() => {
         <div class="adm-section-title"><h4>Itens</h4><button class="adm-btn adm-btn-ghost adm-btn-sm" onclick="ImperadorAdmin.poRowAdd()">${I('plus', 15)} Item</button></div>
         <div id="poRows">${poRows()}</div>
         <label class="adm-field"><span>Observações para o fornecedor</span><textarea rows="2" oninput="ImperadorAdmin.poSet('notes',this.value)" placeholder="Ex.: entregar até 16h, pagamento em boleto 28 dias">${esc(poDraft.notes)}</textarea></label>`,
-      footer: `${pc ? `<button class="adm-btn adm-btn-danger-ghost" onclick="if(confirm('Excluir este rascunho?')) ImperadorAdmin.act('pc_excluir',{id:'${esc(pc.id)}'})">${I('trash', 16)} Excluir</button><span class="gm-foot-space"></span>` : ''}
+      footer: `${pc ? `<button class="adm-btn adm-btn-danger-ghost" onclick="if(confirm('Excluir este rascunho?')) ImperadorAdmin.act('pc_excluir',{id:${jsq(pc.id)}})">${I('trash', 16)} Excluir</button><span class="gm-foot-space"></span>` : ''}
         <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.closeModal()">Cancelar</button>
         <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.savePO()">${I('save', 16)} Salvar pedido</button>`
     });
@@ -1371,17 +1373,17 @@ const ImperadorAdmin = (() => {
         </div>
         <pre class="adm-po-preview">${esc(poText(pc).replace(/\*/g, ''))}</pre>
         ${edit && (pc.status === 'rascunho' || pc.status === 'enviado') ? `<div class="adm-send-row">
-          ${wa ? `<a class="adm-btn adm-btn-ok" href="${wa}" target="_blank" rel="noopener" onclick="ImperadorAdmin.poMark('${esc(pc.id)}','enviado',true)">${I('whatsapp', 16)} Enviar por WhatsApp</a>` : `<span class="adm-btn adm-btn-ghost" style="opacity:.5" title="Cadastre o WhatsApp do fornecedor">${I('whatsapp', 16)} WhatsApp (sem número)</span>`}
-          ${mail ? `<a class="adm-btn adm-btn-ghost" href="${mail}" onclick="ImperadorAdmin.poMark('${esc(pc.id)}','enviado',true)">${I('send', 16)} Enviar por e-mail</a>` : ''}
-          <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.printPO('${esc(pc.id)}')">${I('printer', 16)} Imprimir / PDF</button>
+          ${wa ? `<a class="adm-btn adm-btn-ok" href="${wa}" target="_blank" rel="noopener" onclick="ImperadorAdmin.poMark(${jsq(pc.id)},'enviado',true)">${I('whatsapp', 16)} Enviar por WhatsApp</a>` : `<span class="adm-btn adm-btn-ghost" style="opacity:.5" title="Cadastre o WhatsApp do fornecedor">${I('whatsapp', 16)} WhatsApp (sem número)</span>`}
+          ${mail ? `<a class="adm-btn adm-btn-ghost" href="${mail}" onclick="ImperadorAdmin.poMark(${jsq(pc.id)},'enviado',true)">${I('send', 16)} Enviar por e-mail</a>` : ''}
+          <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.printPO(${jsq(pc.id)})">${I('printer', 16)} Imprimir / PDF</button>
           <button class="adm-btn adm-btn-ghost" onclick="navigator.clipboard.writeText(document.querySelector('.adm-po-preview').textContent).then(()=>ImperadorApp._internal.showToast('Texto copiado','emerald'))">${I('copy', 16)} Copiar</button>
-        </div>` : `<div class="adm-send-row"><button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.printPO('${esc(pc.id)}')">${I('printer', 16)} Imprimir / PDF</button></div>`}
+        </div>` : `<div class="adm-send-row"><button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.printPO(${jsq(pc.id)})">${I('printer', 16)} Imprimir / PDF</button></div>`}
         ${pc.status === 'enviado' ? `<div class="adm-note">${I('info', 16)} Quando a mercadoria chegar, o conferente lança a nota em Recebimento e escolhe este pedido — ao aprovar, ele fica como recebido.</div>` : ''}`,
-      footer: `${edit && pc.status === 'rascunho' ? `<button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.openPO('${esc(pc.id)}')">${I('edit', 16)} Editar</button>` : ''}
-        ${edit && pc.status !== 'cancelado' && pc.status !== 'recebido' ? `<button class="adm-btn adm-btn-danger-ghost" onclick="if(confirm('Cancelar este pedido?')) ImperadorAdmin.act('pc_status',{id:'${esc(pc.id)}',status:'cancelado'})">${I('x-circle', 16)} Cancelar pedido</button>` : ''}
+      footer: `${edit && pc.status === 'rascunho' ? `<button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.openPO(${jsq(pc.id)})">${I('edit', 16)} Editar</button>` : ''}
+        ${edit && pc.status !== 'cancelado' && pc.status !== 'recebido' ? `<button class="adm-btn adm-btn-danger-ghost" onclick="if(confirm('Cancelar este pedido?')) ImperadorAdmin.act('pc_status',{id:${jsq(pc.id)},status:'cancelado'})">${I('x-circle', 16)} Cancelar pedido</button>` : ''}
         <span class="gm-foot-space"></span>
-        ${edit && pc.status === 'rascunho' ? `<button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.act('pc_status',{id:'${esc(pc.id)}',status:'enviado'})">${I('check', 16)} Marcar como enviado</button>` : ''}
-        ${edit && pc.status === 'enviado' ? `<button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.act('pc_status',{id:'${esc(pc.id)}',status:'recebido'})">${I('check-circle', 16)} Marcar como recebido</button>` : ''}
+        ${edit && pc.status === 'rascunho' ? `<button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.act('pc_status',{id:${jsq(pc.id)},status:'enviado'})">${I('check', 16)} Marcar como enviado</button>` : ''}
+        ${edit && pc.status === 'enviado' ? `<button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.act('pc_status',{id:${jsq(pc.id)},status:'recebido'})">${I('check-circle', 16)} Marcar como recebido</button>` : ''}
         <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.closeModal()">Fechar</button>`
     });
   }
@@ -1425,16 +1427,16 @@ const ImperadorAdmin = (() => {
         <label class="adm-field"><span>Nome no cardápio</span><input id="siName" value="${esc(p.name)}" /></label>
         <label class="adm-field"><span>Categoria</span><select id="siCat">${cats.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select></label>
         <div class="adm-form-grid g2">
-          <label class="adm-field"><span>Vende</span><select id="siFrom" onchange="ImperadorAdmin.siPreview('${esc(p.id)}')">
+          <label class="adm-field"><span>Vende</span><select id="siFrom" onchange="ImperadorAdmin.siPreview(${jsq(p.id)})">
             <option value="bar">Unidade inteira (${esc(p.unit)})</option>${dose ? `<option value="uso">Dose em ${esc(p.contentUnit)}</option>` : ''}</select></label>
-          <label class="adm-field"><span>Quantidade por venda</span><input id="siQty" type="number" min="0" step="any" value="1" oninput="ImperadorAdmin.siPreview('${esc(p.id)}')" /></label>
-          <label class="adm-field"><span>Lucro desejado s/ custo (%)</span><input id="siMk" type="number" min="0" value="100" oninput="ImperadorAdmin.siPreview('${esc(p.id)}')" /></label>
+          <label class="adm-field"><span>Quantidade por venda</span><input id="siQty" type="number" min="0" step="any" value="1" oninput="ImperadorAdmin.siPreview(${jsq(p.id)})" /></label>
+          <label class="adm-field"><span>Lucro desejado s/ custo (%)</span><input id="siMk" type="number" min="0" value="100" oninput="ImperadorAdmin.siPreview(${jsq(p.id)})" /></label>
           <label class="adm-field"><span>Preço de venda (R$)</span><input id="siPrice" type="number" min="0" step="0.01" /></label>
         </div>
         <div class="adm-note" id="siPrev"></div>
       </div>`,
       footer: `<button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.closeModal()">Cancelar</button>
-        <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.act('item_do_produto',{productId:'${esc(p.id)}',name:document.getElementById('siName').value,categoryId:document.getElementById('siCat').value,from:document.getElementById('siFrom').value,qty:document.getElementById('siQty').value,targetMarkup:document.getElementById('siMk').value,price:document.getElementById('siPrice').value})">${I('plus', 16)} Colocar no cardápio</button>`
+        <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.act('item_do_produto',{productId:${jsq(p.id)},name:document.getElementById('siName').value,categoryId:document.getElementById('siCat').value,from:document.getElementById('siFrom').value,qty:document.getElementById('siQty').value,targetMarkup:document.getElementById('siMk').value,price:document.getElementById('siPrice').value})">${I('plus', 16)} Colocar no cardápio</button>`
     });
     siPreview(pid);
   }
@@ -1467,7 +1469,7 @@ const ImperadorAdmin = (() => {
         <tbody>${invs.map(x => `<tr><td><strong>${esc(x.number)}</strong><small>${esc(x.createdByName)}</small></td><td>${fmtDate(x.createdAt)}</td><td>${fmtDate(x.finishedAt)}<small>${esc(x.finishedBy || '')}</small></td>
           <td class="r">${x.adjustments || 0}</td><td class="r ${Number(x.valueDiff) < 0 ? 'bad' : 'ok'}">${brl(x.valueDiff)}</td>
           <td>${x.status === 'finalizado' ? '<span class="adm-pill ok">Finalizado</span>' : '<span class="adm-pill bad">Cancelado</span>'}</td>
-          <td class="r"><button class="adm-icon-btn" title="Exportar planilha" onclick="ImperadorAdmin.invCsv('${esc(x.id)}')">${I('download', 16)}</button></td></tr>`).join('')}</tbody></table></div>`
+          <td class="r"><button class="adm-icon-btn" title="Exportar planilha" onclick="ImperadorAdmin.invCsv(${jsq(x.id)})">${I('download', 16)}</button></td></tr>`).join('')}</tbody></table></div>`
         : empty('clipboard-check', 'Nenhum inventário feito ainda')}</div>`;
   }
 
@@ -1493,9 +1495,9 @@ const ImperadorAdmin = (() => {
       <div class="adm-toolbar">
         <div class="adm-search">${I('search', 16)}<input placeholder="Filtrar produto ou categoria" value="${esc(view.invQ || '')}" onchange="ImperadorAdmin.setView('invQ', this.value)" /></div>
         <div class="adm-toolbar-right">
-          <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.invPrint('${esc(inv.id)}')">${I('printer', 16)} Folha de contagem</button>
-          <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.invCsv('${esc(inv.id)}')">${I('download', 16)} Planilha</button>
-          <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.invSave('${esc(inv.id)}')">${I('save', 16)} Salvar contagem</button>
+          <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.invPrint(${jsq(inv.id)})">${I('printer', 16)} Folha de contagem</button>
+          <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.invCsv(${jsq(inv.id)})">${I('download', 16)} Planilha</button>
+          <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.invSave(${jsq(inv.id)})">${I('save', 16)} Salvar contagem</button>
         </div>
       </div>
       <div class="adm-card adm-card-flush"><div class="adm-table-wrap"><table class="adm-table adm-table-edit adm-inv">
@@ -1508,13 +1510,13 @@ const ImperadorAdmin = (() => {
             const c = draftV !== undefined ? draftV : it.counted[l];
             if (c != null && c !== '') dv += (l === 'uso' ? (Number(c) - sys) * it.avgCost / (it.content || 1) : (Number(c) - sys) * it.avgCost);
             const unit = l === 'uso' ? it.contentUnit : it.unit;
-            return `<td class="r"><div class="adm-inv-cell"><span>${qtyFmt(sys)}</span>${I('arrow-right', 12)}<input type="number" min="0" step="any" value="${c == null ? '' : esc(c)}" placeholder="—" oninput="ImperadorAdmin.invSet('${esc(it.productId)}','${l}',this.value)" /><em>${esc(unit)}</em></div></td>`;
+            return `<td class="r"><div class="adm-inv-cell"><span>${qtyFmt(sys)}</span>${I('arrow-right', 12)}<input type="number" min="0" step="any" value="${c == null ? '' : esc(c)}" placeholder="—" oninput="ImperadorAdmin.invSet(${jsq(it.productId)},'${l}',this.value)" /><em>${esc(unit)}</em></div></td>`;
           }).join('');
           return `<tr><td><strong>${esc(it.name)}</strong><small>${esc(it.category || '')}</small></td>${cells}<td class="r ${dv < 0 ? 'bad' : dv > 0 ? 'ok' : ''}" id="invDiff_${esc(it.productId)}">${dv ? brl(dv) : '—'}</td></tr>`;
         }).join('')}</tbody></table></div></div>
       <div class="adm-toolbar">
-        ${edit ? `<button class="adm-btn adm-btn-danger-ghost" onclick="if(confirm('Cancelar o inventário? Nada será ajustado.')) ImperadorAdmin.act('inv_cancelar',{id:'${esc(inv.id)}'},{close:false})">${I('x-circle', 16)} Cancelar inventário</button>` : '<span></span>'}
-        ${edit ? `<button class="adm-btn adm-btn-ok" onclick="ImperadorAdmin.invFinish('${esc(inv.id)}')">${I('check-circle', 16)} Finalizar e ajustar o estoque</button>` : ''}
+        ${edit ? `<button class="adm-btn adm-btn-danger-ghost" onclick="if(confirm('Cancelar o inventário? Nada será ajustado.')) ImperadorAdmin.act('inv_cancelar',{id:${jsq(inv.id)}},{close:false})">${I('x-circle', 16)} Cancelar inventário</button>` : '<span></span>'}
+        ${edit ? `<button class="adm-btn adm-btn-ok" onclick="ImperadorAdmin.invFinish(${jsq(inv.id)})">${I('check-circle', 16)} Finalizar e ajustar o estoque</button>` : ''}
       </div>`;
   }
   function invSet(pid, loc, v) { invDraft[pid] = invDraft[pid] || {}; invDraft[pid][loc] = v === '' ? null : Number(v); }
@@ -1637,7 +1639,7 @@ const ImperadorAdmin = (() => {
           <label class="adm-check span3"><input type="checkbox" id="pdActive" ${!p || p.active !== false ? 'checked' : ''} /> Produto ativo</label>
         </div>
         <div class="adm-note">${I('info', 16)} Exemplo: <strong>Vodka 1L</strong> = embalagem <em>garrafa</em>, conteúdo <em>1000 ml</em>. No bar, a garrafa de uso é controlada em ml (doses de caipirinha).</div>`,
-      footer: `${p ? `<button class="adm-btn adm-btn-danger-ghost" onclick="if(confirm('Excluir este produto?')) ImperadorAdmin.act('produto_excluir',{id:'${esc(p.id)}'})">${I('trash', 16)} Excluir</button>` : ''}
+      footer: `${p ? `<button class="adm-btn adm-btn-danger-ghost" onclick="if(confirm('Excluir este produto?')) ImperadorAdmin.act('produto_excluir',{id:${jsq(p.id)}})">${I('trash', 16)} Excluir</button>` : ''}
         <span class="gm-foot-space"></span>
         <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.closeModal()">Cancelar</button>
         <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.saveProduct('${p ? esc(p.id) : ''}')">${I('save', 16)} Salvar</button>`
@@ -1669,15 +1671,15 @@ const ImperadorAdmin = (() => {
           <div><small>Bar (uso)</small><strong>${qtyFmt(st.uso)}</strong><span>${esc(p.contentUnit)}</span></div>
         </div>
         <div class="adm-routes">${ROUTES.map((r, i) => `
-          <label class="adm-route"><input type="radio" name="trRoute" ${i === 0 ? 'checked' : ''} onchange="ImperadorAdmin.trRoute(${i},'${esc(p.id)}')" />
+          <label class="adm-route"><input type="radio" name="trRoute" ${i === 0 ? 'checked' : ''} onchange="ImperadorAdmin.trRoute(${i},${jsq(p.id)})" />
             <div><strong>${r.label}</strong><small>${r.help}</small></div></label>`).join('')}</div>
         <div class="adm-form-grid g2">
-          <label class="adm-field"><span>Quantidade (${esc(p.unit)})</span><input id="trQty" type="number" min="1" step="1" value="1" oninput="ImperadorAdmin.trPreview('${esc(p.id)}')" /></label>
+          <label class="adm-field"><span>Quantidade (${esc(p.unit)})</span><input id="trQty" type="number" min="1" step="1" value="1" oninput="ImperadorAdmin.trPreview(${jsq(p.id)})" /></label>
           <label class="adm-field"><span>Observação</span><input id="trNote" placeholder="Ex.: reposição do bar para sexta" /></label>
         </div>
         <div class="adm-note" id="trPrev"></div>`,
       footer: `<button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.closeModal()">Cancelar</button>
-               <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.doTransfer('${esc(p.id)}')">${I('transfer', 16)} Transferir</button>`
+               <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.doTransfer(${jsq(p.id)})">${I('transfer', 16)} Transferir</button>`
     });
     trPreview(p.id);
   }
@@ -1716,7 +1718,7 @@ const ImperadorAdmin = (() => {
           <label class="adm-field"><span>Observação</span><input id="ajNote" /></label>
         </div>`,
       footer: `<button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.closeModal()">Cancelar</button>
-               <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.act('estoque_ajustar',{productId:'${esc(p.id)}',location:document.getElementById('ajLoc').value,qty:Number(document.getElementById('ajQty').value),reason:document.getElementById('ajReason').value,note:document.getElementById('ajNote').value})">${I('save', 16)} Registrar ajuste</button>`
+               <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.act('estoque_ajustar',{productId:${jsq(p.id)},location:document.getElementById('ajLoc').value,qty:Number(document.getElementById('ajQty').value),reason:document.getElementById('ajReason').value,note:document.getElementById('ajNote').value})">${I('save', 16)} Registrar ajuste</button>`
     });
   }
 
@@ -1757,13 +1759,13 @@ const ImperadorAdmin = (() => {
       <div class="adm-card adm-card-flush"><div class="adm-table-wrap"><table class="adm-table">
         <thead><tr><th>No cardápio</th><th>Item de venda</th><th>Composição</th><th class="r">Custo</th><th class="r">Preço atual</th><th class="r">Lucro s/ custo</th><th class="r">Margem</th><th class="r">Meta</th><th class="r">Preço sugerido</th><th></th></tr></thead>
         <tbody>${rows.map(r => `<tr class="${r.i.available === false ? 'row-off' : r.below ? 'row-warn' : ''}">
-          <td>${can('produtos', 'use') ? `<label class="adm-switch" title="${r.i.available === false ? 'Fora do cardápio' : 'No cardápio'}"><input type="checkbox" ${r.i.available !== false ? 'checked' : ''} onchange="ImperadorAdmin.act('item_disponibilidade',{menuItemId:'${esc(r.i.id)}',available:this.checked},{close:false})" /><span></span></label>` : (r.i.available === false ? '<span class="adm-pill bad">Fora</span>' : '<span class="adm-pill ok">Sim</span>')}</td>
+          <td>${can('produtos', 'use') ? `<label class="adm-switch" title="${r.i.available === false ? 'Fora do cardápio' : 'No cardápio'}"><input type="checkbox" ${r.i.available !== false ? 'checked' : ''} onchange="ImperadorAdmin.act('item_disponibilidade',{menuItemId:${jsq(r.i.id)},available:this.checked},{close:false})" /><span></span></label>` : (r.i.available === false ? '<span class="adm-pill bad">Fora</span>' : '<span class="adm-pill ok">Sim</span>')}</td>
           <td><strong>${esc(r.i.name)}</strong>${r.i.soldOut && r.i.available !== false ? ' <span class="adm-pill bad">Esgotado</span>' : ''}<small>${esc((cats.find(c => c.id === r.i.categoryId) || {}).name || '')}</small></td>
           <td>${(r.i.composition || []).length ? `<span class="adm-pill info">${(r.i.composition || []).length} insumo(s)</span>` : '<span class="adm-pill">Custo manual</span>'}</td>
           <td class="r">${brl(r.cost)}</td><td class="r"><strong>${brl(r.price)}</strong></td>
           <td class="r ${r.below ? 'bad' : 'ok'}">${pct(r.markup)}</td><td class="r">${pct(r.margin)}</td>
           <td class="r">${pct(r.target)}</td><td class="r">${brl(r.sugg)}</td>
-          <td class="r">${can('produtos', 'edit') ? `<button class="adm-btn adm-btn-ghost adm-btn-sm" onclick="ImperadorAdmin.openRecipe('${esc(r.i.id)}')">${I('edit', 15)} Ficha & preço</button>` : `<button class="adm-icon-btn" onclick="ImperadorAdmin.openRecipe('${esc(r.i.id)}')">${I('eye', 16)}</button>`}</td>
+          <td class="r">${can('produtos', 'edit') ? `<button class="adm-btn adm-btn-ghost adm-btn-sm" onclick="ImperadorAdmin.openRecipe(${jsq(r.i.id)})">${I('edit', 15)} Ficha & preço</button>` : `<button class="adm-icon-btn" onclick="ImperadorAdmin.openRecipe(${jsq(r.i.id)})">${I('eye', 16)}</button>`}</td>
         </tr>`).join('')}</tbody></table></div></div>`;
   }
 
@@ -1901,7 +1903,7 @@ const ImperadorAdmin = (() => {
       </div>` : ''}
       ${calls.length ? `<div class="adm-card adm-card-alert"><div class="adm-card-head"><h3>${I('bell', 18)} Chamados das mesas</h3></div><div class="adm-calls">${calls.map(x => `
         <div class="adm-call"><div><strong>${esc(x.tableId)}</strong><small>${esc(x.message)} · ${esc(x.createdAt)}</small></div>
-        <button class="adm-btn adm-btn-sm adm-btn-ok" onclick="ImperadorAdmin.act('chamado_resolver',{id:'${esc(x.id)}'},{close:false})">${I('check', 15)} Atendido</button></div>`).join('')}</div></div>` : ''}
+        <button class="adm-btn adm-btn-sm adm-btn-ok" onclick="ImperadorAdmin.act('chamado_resolver',{id:${jsq(x.id)}},{close:false})">${I('check', 15)} Atendido</button></div>`).join('')}</div></div>` : ''}
       ${view.vendas === 'chat' ? `<div class="adm-toolbar">${tabs('vendas', [['abertos', 'Em aberto'], ['todos', 'Todos'], ['cancelados', 'Cancelados'], ['chat', 'Chat de pedidos', counts().chats]])}</div>${vendasChat()}` : `
       <div class="adm-toolbar">
         ${tabs('vendas', [['abertos', 'Em aberto'], ['todos', 'Todos'], ['cancelados', 'Cancelados'], ['chat', 'Chat de pedidos', counts().chats]])}
@@ -1923,11 +1925,11 @@ const ImperadorAdmin = (() => {
             <td><small class="clip">${(o.items || []).map(l => `${l.qty}× ${esc(l.name)}`).join(', ')}</small></td>
             <td class="r"><strong>${brl(o.total)}</strong></td>
             <td>${statusPill(o.paymentStatus)}<small>${esc(o.paymentMethod || '')}</small></td>
-            <td>${canChange ? `<select class="adm-select sm" onchange="ImperadorAdmin.act('pedido_atualizar',{id:'${esc(o.id)}',orderStatus:this.value},{close:false})">
+            <td>${canChange ? `<select class="adm-select sm" onchange="ImperadorAdmin.act('pedido_atualizar',{id:${jsq(o.id)},orderStatus:this.value},{close:false})">
               ${['recebido', 'preparando', 'pronto', 'entregue'].map(s => `<option value="${s}" ${o.orderStatus === s ? 'selected' : ''}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`).join('')}</select>` : statusPill(o.orderStatus)}</td>
             <td class="r nowrap">
-              <button class="adm-icon-btn" title="Detalhes" onclick="ImperadorAdmin.viewOrder('${esc(o.id)}')">${I('eye', 16)}</button>
-              ${canChange && o.paymentStatus !== 'pago' ? `<button class="adm-btn adm-btn-ok adm-btn-sm" onclick="ImperadorAdmin.openPay('${esc(o.id)}')">${I('money', 15)} Receber</button>` : ''}
+              <button class="adm-icon-btn" title="Detalhes" onclick="ImperadorAdmin.viewOrder(${jsq(o.id)})">${I('eye', 16)}</button>
+              ${canChange && o.paymentStatus !== 'pago' ? `<button class="adm-btn adm-btn-ok adm-btn-sm" onclick="ImperadorAdmin.openPay(${jsq(o.id)})">${I('money', 15)} Receber</button>` : ''}
             </td></tr>`;
         }).join('')}</tbody></table></div>` : empty('cart', 'Nenhum pedido neste filtro')}</div>`}`;
   }
@@ -1943,7 +1945,7 @@ const ImperadorAdmin = (() => {
       <div class="adm-chat">
         <aside class="adm-chat-list">${chats.map(c => {
           const last = (c.messages || []).filter(m => m.from !== 'bot').slice(-1)[0] || (c.messages || []).slice(-1)[0] || {};
-          return `<button class="${c.id === sel.id ? 'active' : ''} ${c.status !== 'aberto' ? 'closed' : ''}" onclick="ImperadorAdmin.chatOpen('${esc(c.id)}')">
+          return `<button class="${c.id === sel.id ? 'active' : ''} ${c.status !== 'aberto' ? 'closed' : ''}" onclick="ImperadorAdmin.chatOpen(${jsq(c.id)})">
             <span class="adm-avatar sm">${esc((c.name || '?').charAt(0).toUpperCase())}</span>
             <div><strong>${esc(c.name)} <small>· ${esc(c.table)}</small></strong><p>${esc(last.text || '')}</p></div>
             <span class="adm-chat-meta"><time>${String(c.updatedAt || '').slice(11, 16)}</time>${c.unreadStaff ? `<span class="adm-badge warn">${c.unreadStaff}</span>` : ''}</span>
@@ -1952,13 +1954,13 @@ const ImperadorAdmin = (() => {
         <section class="adm-chat-main">
           <header>
             <div><strong>${esc(sel.name)}</strong><small>${esc(sel.table)} · início ${fmtDate(sel.createdAt)}${sel.status !== 'aberto' ? ' · encerrada' : ''}</small></div>
-            ${sel.status === 'aberto' ? `<button class="adm-btn adm-btn-ghost adm-btn-sm" onclick="ImperadorAdmin.chatClose('${esc(sel.id)}')">${I('check-circle', 15)} Encerrar atendimento</button>` : ''}
+            ${sel.status === 'aberto' ? `<button class="adm-btn adm-btn-ghost adm-btn-sm" onclick="ImperadorAdmin.chatClose(${jsq(sel.id)})">${I('check-circle', 15)} Encerrar atendimento</button>` : ''}
           </header>
           ${orders.length ? `<div class="adm-chat-orders">${orders.map(o => `
             <div class="adm-chat-order"><div><strong>${esc(o.id)}</strong><small>${(o.items || []).map(l => `${l.qty}× ${esc(l.name)}`).join(', ')}</small></div>
               <strong>${brl(o.total)}</strong>${statusPill(o.orderStatus === 'cancelado' ? 'cancelado' : o.paymentStatus)}
-              <button class="adm-icon-btn" title="Detalhes" onclick="ImperadorAdmin.viewOrder('${esc(o.id)}')">${I('eye', 16)}</button>
-              ${o.paymentStatus !== 'pago' && o.orderStatus !== 'cancelado' ? `<button class="adm-btn adm-btn-ok adm-btn-sm" onclick="ImperadorAdmin.openPay('${esc(o.id)}')">${I('money', 15)} Cobrar</button>` : ''}
+              <button class="adm-icon-btn" title="Detalhes" onclick="ImperadorAdmin.viewOrder(${jsq(o.id)})">${I('eye', 16)}</button>
+              ${o.paymentStatus !== 'pago' && o.orderStatus !== 'cancelado' ? `<button class="adm-btn adm-btn-ok adm-btn-sm" onclick="ImperadorAdmin.openPay(${jsq(o.id)})">${I('money', 15)} Cobrar</button>` : ''}
             </div>`).join('')}</div>` : ''}
           <div class="adm-chat-msgs" id="admChatMsgs">${(sel.messages || []).map(m => `
             <div class="adm-cmsg ${m.from}">
@@ -1966,7 +1968,7 @@ const ImperadorAdmin = (() => {
               <p>${esc(m.text)}${m.orderId ? ` <b>${esc(m.orderId)}</b>` : ''}</p>
               ${m.proposal ? `<small>${m.proposal.map(i => `${i.qty}× ${esc(i.name)}`).join(', ')}</small>` : ''}
             </div>`).join('')}</div>
-          ${sel.status === 'aberto' ? `<form class="adm-chat-reply" onsubmit="event.preventDefault(); ImperadorAdmin.chatSend('${esc(sel.id)}')">
+          ${sel.status === 'aberto' ? `<form class="adm-chat-reply" onsubmit="event.preventDefault(); ImperadorAdmin.chatSend(${jsq(sel.id)})">
             <input id="admChatText" maxlength="400" placeholder="Responder ${esc(sel.name)}... (ex.: Já estou levando!)" autocomplete="off" />
             <button class="adm-btn adm-btn-primary" type="submit">${I('send', 16)} Enviar</button>
           </form>` : ''}
@@ -2011,7 +2013,7 @@ const ImperadorAdmin = (() => {
           ${showCost ? `<div class="ok"><small>Lucro bruto</small><strong>${brl((Number(o.subtotal) || 0) - (Number(o.costTotal) || 0))}</strong></div>` : ''}
         </div>
         ${o.cancelReason ? `<div class="adm-note bad">${I('x-circle', 16)} Cancelado por ${esc(o.cancelledBy)}: ${esc(o.cancelReason)}</div>` : ''}`,
-      footer: `${can('vendas', 'edit') && o.orderStatus !== 'cancelado' ? `<button class="adm-btn adm-btn-danger-ghost" onclick="ImperadorAdmin.cancelOrder('${esc(o.id)}')">${I('x-circle', 16)} Cancelar pedido</button><span class="gm-foot-space"></span>` : ''}
+      footer: `${can('vendas', 'edit') && o.orderStatus !== 'cancelado' ? `<button class="adm-btn adm-btn-danger-ghost" onclick="ImperadorAdmin.cancelOrder(${jsq(o.id)})">${I('x-circle', 16)} Cancelar pedido</button><span class="gm-foot-space"></span>` : ''}
         <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.closeModal()">Fechar</button>`
     });
   }
@@ -2026,7 +2028,7 @@ const ImperadorAdmin = (() => {
       body: `<div class="adm-paygrid">${['PIX', 'Dinheiro', 'Cartão de débito', 'Cartão de crédito'].map((m, i) => `
         <label class="adm-route"><input type="radio" name="payM" value="${m}" ${i === 0 ? 'checked' : ''} /><div><strong>${I(m === 'PIX' ? 'pix' : m === 'Dinheiro' ? 'money' : 'card', 18)} ${m}</strong></div></label>`).join('')}</div>`,
       footer: `<button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.closeModal()">Cancelar</button>
-        <button class="adm-btn adm-btn-ok" onclick="ImperadorAdmin.act('pedido_atualizar',{id:'${esc(o.id)}',paymentStatus:'pago',paymentMethod:document.querySelector('input[name=payM]:checked').value,assignToMe:true})">${I('check', 16)} Confirmar recebimento</button>`
+        <button class="adm-btn adm-btn-ok" onclick="ImperadorAdmin.act('pedido_atualizar',{id:${jsq(o.id)},paymentStatus:'pago',paymentMethod:document.querySelector('input[name=payM]:checked').value,assignToMe:true})">${I('check', 16)} Confirmar recebimento</button>`
     });
   }
 
@@ -2044,8 +2046,8 @@ const ImperadorAdmin = (() => {
             <select class="adm-select" id="pdvCat" onchange="ImperadorAdmin.pdvFilter()"><option value="">Todas</option>${(st.categories || []).map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select>
           </div>
           <div class="adm-pdv-grid">${(st.menuItems || []).map(i => `
-            <button class="adm-pdv-item" data-cat="${esc(i.categoryId)}" data-q="${esc(i.name.toLowerCase())}" onclick="ImperadorAdmin.pdvAdd('${esc(i.id)}')">
-              <span class="adm-pdv-img" style="background-image:url('${esc(i.image || '')}')"></span>
+            <button class="adm-pdv-item" data-cat="${esc(i.categoryId)}" data-q="${esc(i.name.toLowerCase())}" onclick="ImperadorAdmin.pdvAdd(${jsq(i.id)})">
+              <span class="adm-pdv-img" style="background-image:url(${jsq(i.image || '')})"></span>
               <span class="adm-pdv-name">${esc(i.name)}</span><strong>${brl(i.price)}</strong>
             </button>`).join('')}</div>
         </div>
@@ -2158,7 +2160,7 @@ const ImperadorAdmin = (() => {
           <td><strong>${esc(s.name)}</strong></td><td class="r">${s.orders}</td><td class="r">${qtyFmt(s.items)}</td>
           <td class="r"><strong>${brl(s.subtotal)}</strong></td><td class="r">${brl(s.orders ? s.subtotal / s.orders : 0)}</td>
           <td class="r">${s.id ? pct(s.pct) : '—'}</td><td class="r ok"><strong>${s.id ? brl(s.commission) : '—'}</strong></td>
-          <td class="r"><button class="adm-btn adm-btn-ghost adm-btn-sm" onclick="ImperadorAdmin.sellerDetail('${esc(s.id)}')">${I('eye', 15)} Detalhar</button></td></tr>`).join('')}</tbody></table></div>`
+          <td class="r"><button class="adm-btn adm-btn-ghost adm-btn-sm" onclick="ImperadorAdmin.sellerDetail(${jsq(s.id)})">${I('eye', 15)} Detalhar</button></td></tr>`).join('')}</tbody></table></div>`
         : empty('percent', 'Sem vendas neste mês')}</div>
       ${can('usuarios', 'edit') && rule.mode !== 'unica' ? `<div class="adm-note">${I('info', 16)} O percentual de cada vendedor é definido em <a href="javascript:void(0)" onclick="ImperadorApp.setAdminTab('usuarios')">IAM → Usuários</a>.</div>` : ''}`;
   }
@@ -2221,7 +2223,7 @@ const ImperadorAdmin = (() => {
       return `<div class="adm-toolbar">${t}${edit ? `<button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.openExpense()">${I('plus', 16)} Nova despesa</button>` : ''}</div>
         <div class="adm-card adm-card-flush">${list.length ? `<div class="adm-table-wrap"><table class="adm-table"><thead><tr><th>Despesa</th><th>Categoria</th><th>Vencimento</th><th class="r">Valor</th><th>Status</th><th></th></tr></thead>
         <tbody>${list.map(e => `<tr><td><strong>${esc(e.name)}</strong>${e.notes ? `<small>${esc(e.notes)}</small>` : ''}</td><td>${esc(e.category)}</td><td>${esc(e.dueDate)}</td><td class="r">${brl(e.amount)}</td><td>${statusPill(e.status)}</td>
-          <td class="r">${edit ? `<button class="adm-icon-btn" onclick="ImperadorAdmin.openExpense('${esc(e.id)}')">${I('edit', 16)}</button>` : ''}</td></tr>`).join('')}</tbody>
+          <td class="r">${edit ? `<button class="adm-icon-btn" onclick="ImperadorAdmin.openExpense(${jsq(e.id)})">${I('edit', 16)}</button>` : ''}</td></tr>`).join('')}</tbody>
         <tfoot><tr><td colspan="3">Total mensal</td><td class="r"><strong>${brl(list.reduce((s, e) => s + (Number(e.amount) || 0), 0))}</strong></td><td colspan="2"></td></tr></tfoot></table></div>` : empty('wallet', 'Nenhuma despesa cadastrada')}</div>`;
     }
     if (view.financeiro === 'folha') {
@@ -2232,7 +2234,7 @@ const ImperadorAdmin = (() => {
           <td class="r">${brl(e.baseSalary)}</td><td class="r">${brl(e.bonuses)}</td><td class="r">${brl(e.advances)}</td>
           <td class="r"><strong>${brl((Number(e.baseSalary) || 0) + (Number(e.bonuses) || 0) - (Number(e.advances) || 0))}</strong></td>
           <td>${e.paidThisMonth ? statusPill('pago') : statusPill('pendente')}</td>
-          <td class="r">${edit ? `<button class="adm-icon-btn" onclick="ImperadorAdmin.openEmployee('${esc(e.id)}')">${I('edit', 16)}</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : empty('users', 'Nenhum funcionário cadastrado')}</div>`;
+          <td class="r">${edit ? `<button class="adm-icon-btn" onclick="ImperadorAdmin.openEmployee(${jsq(e.id)})">${I('edit', 16)}</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : empty('users', 'Nenhum funcionário cadastrado')}</div>`;
     }
     if (view.financeiro === 'compras') {
       const list = ((st.erp || {}).receipts || []).filter(n => n.status === 'aprovada' && String(n.reviewedAt || '').slice(0, 7) === view.financeiroMes);
@@ -2279,7 +2281,7 @@ const ImperadorAdmin = (() => {
         <label class="adm-field"><span>Valor mensal (R$)</span><input id="exAmt" type="number" min="0" step="0.01" value="${esc(e ? e.amount : '')}" /></label>
         <label class="adm-field"><span>Status deste mês</span><select id="exSt"><option value="pendente">Pendente</option><option value="pago" ${e && e.status === 'pago' ? 'selected' : ''}>Pago</option></select></label>
         <label class="adm-field span2"><span>Observação</span><input id="exNotes" value="${esc(e ? e.notes || '' : '')}" /></label></div>`,
-      footer: `${e ? `<button class="adm-btn adm-btn-danger-ghost" onclick="if(confirm('Excluir despesa?')) ImperadorAdmin.act('despesa_excluir',{id:'${esc(e.id)}'})">${I('trash', 16)} Excluir</button><span class="gm-foot-space"></span>` : ''}
+      footer: `${e ? `<button class="adm-btn adm-btn-danger-ghost" onclick="if(confirm('Excluir despesa?')) ImperadorAdmin.act('despesa_excluir',{id:${jsq(e.id)}})">${I('trash', 16)} Excluir</button><span class="gm-foot-space"></span>` : ''}
         <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.closeModal()">Cancelar</button>
         <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.act('despesa_salvar',{id:'${e ? esc(e.id) : ''}',name:document.getElementById('exName').value,category:document.getElementById('exCat').value,dueDate:document.getElementById('exDue').value,amount:document.getElementById('exAmt').value,status:document.getElementById('exSt').value,notes:document.getElementById('exNotes').value})">${I('save', 16)} Salvar</button>`
     });
@@ -2300,7 +2302,7 @@ const ImperadorAdmin = (() => {
         <label class="adm-field"><span>Vales / adiantamentos (R$)</span><input id="emAdv" type="number" min="0" step="0.01" value="${esc(e ? e.advances : 0)}" /></label>
         <label class="adm-check"><input type="checkbox" id="emPaid" ${e && e.paidThisMonth ? 'checked' : ''} /> Pago neste mês</label>
         <label class="adm-check"><input type="checkbox" id="emActive" ${!e || e.status !== 'inativo' ? 'checked' : ''} /> Ativo</label></div>`,
-      footer: `${e ? `<button class="adm-btn adm-btn-danger-ghost" onclick="if(confirm('Excluir funcionário?')) ImperadorAdmin.act('funcionario_excluir',{id:'${esc(e.id)}'})">${I('trash', 16)} Excluir</button><span class="gm-foot-space"></span>` : ''}
+      footer: `${e ? `<button class="adm-btn adm-btn-danger-ghost" onclick="if(confirm('Excluir funcionário?')) ImperadorAdmin.act('funcionario_excluir',{id:${jsq(e.id)}})">${I('trash', 16)} Excluir</button><span class="gm-foot-space"></span>` : ''}
         <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.closeModal()">Cancelar</button>
         <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.saveEmployee('${e ? esc(e.id) : ''}')">${I('save', 16)} Salvar</button>`
     });
@@ -2344,7 +2346,7 @@ const ImperadorAdmin = (() => {
           <td>${esc(u.roleLabel)}</td><td><div class="adm-perm-dots">${permSummary(u)}</div></td>
           <td class="r">${rule.mode === 'unica' ? `${pct(rule.percent)} <small>regra única</small>` : pct(u.commissionPercent)}</td>
           <td>${u.active ? (u.mustChange ? '<span class="adm-pill warn">Senha provisória</span>' : '<span class="adm-pill ok">Ativo</span>') : '<span class="adm-pill bad">Inativo</span>'}</td>
-          <td class="r">${edit ? `<button class="adm-icon-btn" onclick="ImperadorAdmin.openUser('${esc(u.id)}')">${I('edit', 16)}</button>` : ''}</td></tr>`).join('')}</tbody></table></div></div>
+          <td class="r">${edit ? `<button class="adm-icon-btn" onclick="ImperadorAdmin.openUser(${jsq(u.id)})">${I('edit', 16)}</button>` : ''}</td></tr>`).join('')}</tbody></table></div></div>
       <div class="adm-legend"><span class="adm-perm-dot lv-view">${I('eye', 14)}</span> Ver <span class="adm-perm-dot lv-use">${I('check', 14)}</span> Usar <span class="adm-perm-dot lv-edit">${I('edit', 14)}</span> Editar</div>`;
   }
 
@@ -2357,7 +2359,7 @@ const ImperadorAdmin = (() => {
       <div class="adm-cards">${roles.map(([k, r]) => `
         <div class="adm-card adm-role">
           <div class="adm-role-top"><div><strong>${esc(r.label)}</strong><small>${r.builtin ? 'Perfil padrão' : 'Perfil personalizado'} · ${r.users || 0} usuário(s)</small></div>
-            ${edit && k !== 'admin' ? `<button class="adm-icon-btn" onclick="ImperadorAdmin.openRole('${esc(k)}')">${I('edit', 16)}</button>` : ''}</div>
+            ${edit && k !== 'admin' ? `<button class="adm-icon-btn" onclick="ImperadorAdmin.openRole(${jsq(k)})">${I('edit', 16)}</button>` : ''}</div>
           <div class="adm-perm-dots">${k === 'admin' ? '<span class="adm-pill info">Acesso total</span>' : permSummary({ permissions: r.permissions })}</div>
         </div>`).join('')}</div>`;
   }
@@ -2376,7 +2378,7 @@ const ImperadorAdmin = (() => {
         </div>
         <div class="adm-section-title"><h4>Permissões por módulo</h4></div>
         <div id="rlPerms">${permMatrixFor(roleDraft, 'rolePerm', false)}</div>`,
-      footer: `${r && !r.builtin ? `<button class="adm-btn adm-btn-danger-ghost" onclick="ImperadorAdmin.deleteRole('${esc(key)}')">${I('trash', 16)} Excluir</button><span class="gm-foot-space"></span>` : ''}
+      footer: `${r && !r.builtin ? `<button class="adm-btn adm-btn-danger-ghost" onclick="ImperadorAdmin.deleteRole(${jsq(key)})">${I('trash', 16)} Excluir</button><span class="gm-foot-space"></span>` : ''}
         <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.closeModal()">Cancelar</button>
         <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.saveRole()">${I('save', 16)} Salvar perfil</button>`
     });
@@ -2434,8 +2436,8 @@ const ImperadorAdmin = (() => {
             <div><dt>Endereço</dt><dd>${esc((p && p.ip) || d.registeredIp || '—')}</dd></div>
           </dl>
           ${edit ? `<div class="adm-device-actions">
-            ${d.status === 'pendente' ? `<button class="adm-btn adm-btn-ok adm-btn-sm" onclick="ImperadorAdmin.openDevice('${esc(d.id)}', true)">${I('check', 15)} Liberar</button>` : ''}
-            <button class="adm-btn adm-btn-ghost adm-btn-sm" onclick="ImperadorAdmin.openDevice('${esc(d.id)}')">${I('settings', 15)} Configurar</button>
+            ${d.status === 'pendente' ? `<button class="adm-btn adm-btn-ok adm-btn-sm" onclick="ImperadorAdmin.openDevice(${jsq(d.id)}, true)">${I('check', 15)} Liberar</button>` : ''}
+            <button class="adm-btn adm-btn-ghost adm-btn-sm" onclick="ImperadorAdmin.openDevice(${jsq(d.id)})">${I('settings', 15)} Configurar</button>
           </div>` : ''}
         </div>`;
       }).join('')}</div>`;
@@ -2454,9 +2456,9 @@ const ImperadorAdmin = (() => {
         <label class="adm-field"><span>Mesa</span><select id="dvT"><option value="">— Livre —</option>${tables.map(t => `<option ${d.table === t.id ? 'selected' : ''}>${esc(t.id)}</option>`).join('')}</select></label>
         <label class="adm-check"><input type="checkbox" id="dvB" ${d.blocked ? 'checked' : ''} /> Bloquear este tablet</label>
       </div>`,
-      footer: `<button class="adm-btn adm-btn-danger-ghost" onclick="if(confirm('Remover este tablet?')) ImperadorAdmin.act('dispositivo_excluir',{id:'${esc(d.id)}'})">${I('trash', 16)} Remover</button><span class="gm-foot-space"></span>
+      footer: `<button class="adm-btn adm-btn-danger-ghost" onclick="if(confirm('Remover este tablet?')) ImperadorAdmin.act('dispositivo_excluir',{id:${jsq(d.id)}})">${I('trash', 16)} Remover</button><span class="gm-foot-space"></span>
         <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.closeModal()">Cancelar</button>
-        <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.act('dispositivo_salvar',{id:'${esc(d.id)}',name:document.getElementById('dvN').value,mode:document.getElementById('dvM').value,table:document.getElementById('dvT').value,blocked:document.getElementById('dvB').checked,approve:true})">${I('check', 16)} ${approve ? 'Liberar tablet' : 'Salvar'}</button>`
+        <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.act('dispositivo_salvar',{id:${jsq(d.id)},name:document.getElementById('dvN').value,mode:document.getElementById('dvM').value,table:document.getElementById('dvT').value,blocked:document.getElementById('dvB').checked,approve:true})">${I('check', 16)} ${approve ? 'Liberar tablet' : 'Salvar'}</button>`
     });
   }
 
@@ -2471,7 +2473,7 @@ const ImperadorAdmin = (() => {
         <td><strong>${esc(x.userName)}</strong>${me() && x.userId === me().id ? '<small>você</small>' : ''}</td>
         <td>${x.device ? esc(devs[x.device] || x.device) : '<span class="muted">Navegador</span>'}</td>
         <td>${esc(x.ip)}</td><td>${fmtDate(new Date(x.since - new Date().getTimezoneOffset() * 60000).toISOString())}</td><td>${ago(x.lastSeen)}</td>
-        <td class="r">${edit && !(me() && x.userId === me().id) ? `<button class="adm-btn adm-btn-danger-ghost adm-btn-sm" onclick="ImperadorAdmin.endSessions('${esc(x.userId)}')">${I('logout', 15)} Encerrar</button>` : ''}</td></tr>`).join('')}</tbody></table></div></div>`;
+        <td class="r">${edit && !(me() && x.userId === me().id) ? `<button class="adm-btn adm-btn-danger-ghost adm-btn-sm" onclick="ImperadorAdmin.endSessions(${jsq(x.userId)})">${I('logout', 15)} Encerrar</button>` : ''}</td></tr>`).join('')}</tbody></table></div></div>`;
   }
   async function endSessions(userId) {
     if (!confirm('Encerrar todas as sessões deste usuário? Ele precisará entrar de novo.')) return;
@@ -2498,7 +2500,7 @@ const ImperadorAdmin = (() => {
         </div>
         <div class="adm-section-title"><h4>Permissões por módulo</h4></div>
         <div id="usPerms">${permMatrix()}</div>`,
-      footer: `${u ? `<button class="adm-btn adm-btn-danger-ghost" onclick="ImperadorAdmin.deleteUser('${esc(u.id)}')">${I('trash', 16)} Excluir</button><span class="gm-foot-space"></span>` : ''}
+      footer: `${u ? `<button class="adm-btn adm-btn-danger-ghost" onclick="ImperadorAdmin.deleteUser(${jsq(u.id)})">${I('trash', 16)} Excluir</button><span class="gm-foot-space"></span>` : ''}
         <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.closeModal()">Cancelar</button>
         <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.saveUser()">${I('save', 16)} Salvar usuário</button>`
     });

@@ -7,6 +7,7 @@ const ImperadorHome = (() => {
   const A = () => ImperadorApp._internal;
   const S = () => A().getState();
   const esc = (v) => A().escapeHtml(v);
+  const jsq = (v) => esc(JSON.stringify(String(v == null ? '' : v)));
   const brl = (v) => A().formatBRL(v);
   const uid = (p) => p + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
@@ -131,7 +132,7 @@ const ImperadorHome = (() => {
       ${renderNav('home')}
 
       <header class="hm-hero" id="hm-top">
-        <div class="hm-hero-bg" style="background-image:url('${esc(h.heroImage)}')"></div>
+        <div class="hm-hero-bg" style="background-image:url(${jsq(h.heroImage)})"></div>
         <div class="hm-hero-overlay"></div>
         <div class="hm-hero-content hm-reveal">
           ${h.heroKicker ? `<span class="hm-kicker">${esc(h.heroKicker)}</span>` : ''}
@@ -196,7 +197,7 @@ const ImperadorHome = (() => {
                 </div>
                 ${d.description ? `<p>${esc(d.description)}</p>` : ''}
                 ${d.menuItemId && state.menuItems.some(m => m.id === d.menuItemId) ? `
-                  <button class="hm-link-btn" onclick="ImperadorApp.openProductModal('${esc(d.menuItemId)}')">Pedir agora →</button>` : ''}
+                  <button class="hm-link-btn" onclick="ImperadorApp.openProductModal(${jsq(d.menuItemId)})">Pedir agora →</button>` : ''}
               </div>
             </article>`).join('')}
         </div>` : `<p class="hm-empty">Em breve, fotos dos nossos pratos.</p>`}
@@ -240,7 +241,7 @@ const ImperadorHome = (() => {
         </div>
         <div class="hm-feed">
           ${posts.map(p => `
-            <a class="hm-feed-item hm-reveal" ${h.links.instagram ? `href="${esc(h.links.instagram)}" target="_blank" rel="noopener"` : `href="javascript:void(0)" onclick="ImperadorApp.openSocialPostModal('${esc(p.id)}')"`}>
+            <a class="hm-feed-item hm-reveal" ${h.links.instagram ? `href="${esc(h.links.instagram)}" target="_blank" rel="noopener"` : `href="javascript:void(0)" onclick="ImperadorApp.openSocialPostModal(${jsq(p.id)})"`}>
               ${img(p.imageUrl, p.title)}
               <span class="hm-feed-over">${esc(p.title)}</span>
             </a>`).join('')}
@@ -368,7 +369,7 @@ const ImperadorHome = (() => {
       ${renderNav('category')}
 
       <header class="hm-cat-hero">
-        <div class="hm-hero-bg" style="background-image:url('${esc(categoryCover(cat))}')"></div>
+        <div class="hm-hero-bg" style="background-image:url(${jsq(categoryCover(cat))})"></div>
         <div class="hm-hero-overlay"></div>
         <div class="hm-cat-hero-content">
           <div class="hm-crumbs"><a href="#inicio" onclick="ImperadorHome.goHome(event)">Início</a> / <a href="#inicio" onclick="ImperadorHome.goHome(event,'hm-cardapio')">Cardápio</a> / <span>${esc(cat.name)}</span></div>
@@ -399,7 +400,7 @@ const ImperadorHome = (() => {
             return `
             <article class="hm-item hm-reveal ${out ? 'out' : ''}" style="--d:${(i % 3) * 70}ms"
               data-search="${esc((it.name + ' ' + (it.description || '') + ' ' + (it.badge || '')).toLowerCase())}"
-              ${out ? '' : `onclick="ImperadorApp.openProductModal('${esc(it.id)}')"`}>
+              ${out ? '' : `onclick="ImperadorApp.openProductModal(${jsq(it.id)})"`}>
               <div class="hm-item-img">
                 ${img(it.image, it.name)}
                 ${it.badge ? `<span class="hm-item-badge">${esc(it.badge)}</span>` : ''}
@@ -471,7 +472,7 @@ const ImperadorHome = (() => {
               ${items.map(it => {
                 const out = !!it.soldOut;
                 return `
-                <div class="hm-pi ${out ? 'out' : ''}" data-search="${esc((it.name + ' ' + (it.description || '') + ' ' + (it.badge || '') + ' ' + c.name).toLowerCase())}" ${out ? '' : `onclick="ImperadorApp.openProductModal('${esc(it.id)}')"`}>
+                <div class="hm-pi ${out ? 'out' : ''}" data-search="${esc((it.name + ' ' + (it.description || '') + ' ' + (it.badge || '') + ' ' + c.name).toLowerCase())}" ${out ? '' : `onclick="ImperadorApp.openProductModal(${jsq(it.id)})"`}>
                   <div class="hm-pi-main">
                     <span class="hm-pi-name">${esc(it.name)}${it.badge ? `<em>${esc(it.badge)}</em>` : ''}</span>
                     <span class="hm-pi-dots"></span>
@@ -834,19 +835,19 @@ const ImperadorHome = (() => {
         <div class="hma-list">
           ${[...state.categories].sort((a, b) => (a.order || 0) - (b.order || 0)).map(c => `
             <div class="hma-row hma-cat-row">
-              <div class="hma-row-thumb hma-click" title="Trocar capa" onclick="ImperadorHome.uploadCategoryCover('${esc(c.id)}')">${img(categoryCover(c), c.name)}<span>📤</span></div>
+              <div class="hma-row-thumb hma-click" title="Trocar capa" onclick="ImperadorHome.uploadCategoryCover(${jsq(c.id)})">${img(categoryCover(c), c.name)}<span>📤</span></div>
               <div class="hma-cat-fields">
                 <div class="hma-cat-line">
-                  <select class="hma-mini" style="width:150px" onchange="ImperadorHome.setCategoryField('${esc(c.id)}','icon',this.value); ImperadorApp._internal.saveState(true)" title="Ícone">
+                  <select class="hma-mini" style="width:150px" onchange="ImperadorHome.setCategoryField(${jsq(c.id)},'icon',this.value); ImperadorApp._internal.saveState(true)" title="Ícone">
                     ${ImperadorIcons.CATEGORY_CHOICES.map(([e, label]) => `<option value="${e}" ${c.icon === e ? 'selected' : ''}>${label}</option>`).join('')}
                     ${c.icon && !ImperadorIcons.CATEGORY_CHOICES.some(([e]) => e === c.icon) ? `<option value="${esc(c.icon)}" selected>Personalizado</option>` : ''}
                   </select>
-                  <input class="hma-mini" style="flex:1" value="${esc(c.name)}" oninput="ImperadorHome.setCategoryField('${esc(c.id)}','name',this.value)" title="Nome da página" />
+                  <input class="hma-mini" style="flex:1" value="${esc(c.name)}" oninput="ImperadorHome.setCategoryField(${jsq(c.id)},'name',this.value)" title="Nome da página" />
                 </div>
-                <input class="hma-mini" value="${esc(c.description || '')}" placeholder="Descrição da página" oninput="ImperadorHome.setCategoryField('${esc(c.id)}','description',this.value)" />
+                <input class="hma-mini" value="${esc(c.description || '')}" placeholder="Descrição da página" oninput="ImperadorHome.setCategoryField(${jsq(c.id)},'description',this.value)" />
               </div>
               <div class="hma-row-actions">
-                <label class="hma-toggle" style="margin:0"><input type="checkbox" ${c.hiddenOnSite ? '' : 'checked'} onchange="ImperadorHome.setCategoryField('${esc(c.id)}','hiddenOnSite',!this.checked)" /><span>No site</span></label>
+                <label class="hma-toggle" style="margin:0"><input type="checkbox" ${c.hiddenOnSite ? '' : 'checked'} onchange="ImperadorHome.setCategoryField(${jsq(c.id)},'hiddenOnSite',!this.checked)" /><span>No site</span></label>
                 <a class="btn-outline" style="text-decoration:none" href="#cardapio/${esc(c.id)}">👁️ Abrir</a>
               </div>
             </div>`).join('')}

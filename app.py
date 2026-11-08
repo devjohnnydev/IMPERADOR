@@ -13,6 +13,14 @@ Como executar:
     python app.py
 """
 
+import os
+import time
+
+# Horário de Brasília em qualquer servidor (o Railway roda em UTC)
+os.environ.setdefault("TZ", "America/Sao_Paulo")
+if hasattr(time, "tzset"):
+    time.tzset()
+
 import base64
 import json
 import mimetypes
@@ -20,7 +28,6 @@ import os
 import re
 import sys
 import threading
-import time
 import uuid
 import webbrowser
 from datetime import datetime
@@ -30,6 +37,7 @@ from urllib.parse import parse_qs, urlparse
 
 import auth
 import erp
+import storage
 from database import (
     calcular_resumo_financeiro_dre,
     inicializar_banco,
@@ -147,8 +155,14 @@ class ImperadorPythonHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(corpo)))
         self.send_header("Cache-Control", "no-store")
+        self._headers_seguranca()
         self.end_headers()
         self.wfile.write(corpo)
+
+    def _headers_seguranca(self) -> None:
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("Referrer-Policy", "same-origin")
 
     def _token(self) -> str:
         cab = self.headers.get("Authorization", "")
@@ -158,6 +172,10 @@ class ImperadorPythonHandler(BaseHTTPRequestHandler):
         return auth.usuario_do_token(self._token())
 
     def _ip(self) -> str:
+        if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("TRUST_PROXY"):
+            encaminhado = (self.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+            if encaminhado:
+                return encaminhado
         return self.client_address[0] if self.client_address else "?"
 
     def _negar(self, user) -> None:
@@ -175,6 +193,26 @@ class ImperadorPythonHandler(BaseHTTPRequestHandler):
         if rota == "/api/state":
             self._responder_json(200, resposta_estado(carregar_estado(), self._usuario()))
             return
+
+        if rota == "/api/health":
+            self._responder_json(200, {"ok": True, "storage": storage.descricao(), "time": datetime.now().isoformat()})
+            return
+
+        # Imagens enviadas pelo painel (no Railway ficam no banco, pois o disco é apagado a cada deploy)
+        if rota.startswith("/uploads/"):
+            nome = rota[len("/uploads/"):]
+            if re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", nome or ""):
+                midia = storage.store().media_ler(nome)
+                if midia:
+                    conteudo, mime = midia
+                    self.send_response(200)
+                    self.send_header("Content-Type", mime)
+                    self.send_header("Content-Length", str(len(conteudo)))
+                    self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+                    self._headers_seguranca()
+                    self.end_headers()
+                    self.wfile.write(conteudo)
+                    return
 
         if rota == "/api/me":
             user = self._usuario()
@@ -210,7 +248,12 @@ class ImperadorPythonHandler(BaseHTTPRequestHandler):
         # Arquivos estáticos de public/
         relativo = "/index.html" if rota in ("/", "") else rota
         alvo = (PUBLIC_DIR / os.path.normpath(relativo.lstrip("/\\"))).resolve()
-        if not str(alvo).startswith(str(PUBLIC_DIR.resolve())) or not alvo.is_file():
+        try:
+            alvo.relative_to(PUBLIC_DIR.resolve())
+            dentro = True
+        except ValueError:
+            dentro = False
+        if not dentro or not alvo.is_file() or alvo.name.startswith("_"):
             alvo = PUBLIC_DIR / "index.html"
         if not alvo.is_file():
             self.send_error(404, "Arquivo nao encontrado")
@@ -225,6 +268,7 @@ class ImperadorPythonHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(conteudo)))
         if alvo.suffix in (".js", ".css", ".html"):
             self.send_header("Cache-Control", "no-cache")
+        self._headers_seguranca()
         self.end_headers()
         self.wfile.write(conteudo)
 
@@ -300,6 +344,9 @@ class ImperadorPythonHandler(BaseHTTPRequestHandler):
 
         # ---- Pedidos e chamados do cardápio QR / tablet (sem login) ---------
         if rota == "/api/public/sync":
+            if not _limite_ok(self._ip(), "sync", 30):
+                self._responder_json(429, {"ok": False, "error": "Muitos pedidos em sequência. Aguarde um instante."})
+                return
             with _estado_lock:
                 estado = carregar_estado()
                 qtd = erp.aplicar_sync_publico(estado, payload, user)
@@ -401,9 +448,8 @@ class ImperadorPythonHandler(BaseHTTPRequestHandler):
             if len(conteudo) > 12 * 1024 * 1024:
                 self._responder_json(413, {"ok": False, "error": "Imagem muito grande (máx. 12MB)"})
                 return
-            UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
             nome = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}.{ext}"
-            (UPLOADS_DIR / nome).write_bytes(conteudo)
+            storage.store().media_gravar(nome, f"image/{'jpeg' if ext == 'jpg' else ext}", conteudo)
             self._responder_json(200, {"ok": True, "url": f"/uploads/{nome}"})
             return
 
@@ -471,12 +517,13 @@ def iniciar_servidor() -> None:
     print(f"Cardápio Digital (QR):    {url_local}/?view=menu")
     print(f"Tablet na mesa (PIX):     {url_local}/?view=tablet")
     print(f"Painel administrativo:    {url_local}/?view=admin")
+    print(f"Banco de dados:           {storage.descricao()}")
     if auth.precisa_trocar_senha_padrao():
         print(f"Primeiro acesso: usuário '{auth.USUARIO_PADRAO}' / senha '{auth.SENHA_PADRAO}' (será pedido para trocar)")
     print("=" * 74)
     print("Pressione CTRL+C para encerrar o servidor.")
 
-    if os.environ.get("NO_BROWSER") != "1":
+    if os.environ.get("NO_BROWSER") != "1" and not storage.USANDO_POSTGRES and not os.environ.get("RAILWAY_ENVIRONMENT"):
         threading.Timer(1.0, lambda: webbrowser.open(url_local)).start()
     try:
         servidor.serve_forever()

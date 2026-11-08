@@ -24,13 +24,26 @@ import auth
 import chat_pedido
 import time as _time
 
+import re as _re_ids
+
 LOCAIS = ("deposito", "bar", "uso")
+ID_SEGURO = _re_ids.compile(r"[A-Za-z0-9_.-]{1,40}")
 NOME_LOCAL = {"deposito": "Depósito", "bar": "Bar (venda)", "uso": "Bar (uso/produção)"}
 MAX_MOVIMENTOS = 3000
 
 
 class ErroNegocio(Exception):
     pass
+
+
+def _novo_id_pedido(estado: Dict) -> str:
+    """Número de pedido curto e único (evita sobrescrever um pedido antigo por coincidência)."""
+    existentes = {o.get("id") for o in estado.get("orders", [])}
+    for _ in range(50):
+        oid = f"PED-{secrets.randbelow(900000) + 100000}"
+        if oid not in existentes:
+            return oid
+    return f"PED-{datetime.now().strftime('%y%m%d%H%M%S')}{secrets.token_hex(2).upper()}"
 
 
 def _agora() -> str:
@@ -501,7 +514,7 @@ def _montar_pedido(estado: Dict, linhas_in: List[Dict], user: Optional[Dict], re
 
 
 def acao_venda_criar(estado: Dict, p: Dict, user: Dict) -> str:
-    oid = f"PED-{secrets.randbelow(900000) + 100000}"
+    oid = _novo_id_pedido(estado)
     base = _montar_pedido(estado, p.get("items"), user, oid)
     pct = _num((estado.get("settings") or {}).get("serviceFeePercent"), 10)
     taxa = round(base["subtotal"] * pct / 100, 2) if p.get("serviceFee") else 0.0
@@ -564,17 +577,21 @@ def acao_chamado_resolver(estado: Dict, p: Dict, user: Dict) -> str:
 def aplicar_sync_publico(estado: Dict, payload: Dict, user: Optional[Dict]) -> int:
     """Pedidos e chamados vindos do cardápio QR / tablet da mesa (sem login, ou com vendedor logado)."""
     adicionados = 0
-    ids = {o.get("id") for o in estado["orders"]}
+    # O ID enviado pelo navegador serve só para evitar duplicidade (clientRef);
+    # o pedido sempre recebe um ID gerado aqui (nunca confiar em dados do cliente).
+    refs = {o.get("clientRef") for o in estado["orders"] if o.get("clientRef")}
     for ped in (payload.get("orders") or [])[:20]:
-        if not isinstance(ped, dict) or not ped.get("id") or ped["id"] in ids:
+        ref = str((ped or {}).get("id") or "") if isinstance(ped, dict) else ""
+        if not ID_SEGURO.fullmatch(ref) or ref in refs:
             continue
-        oid = _txt(ped["id"], 40)
+        oid = _novo_id_pedido(estado)
         vendedor = user if user and auth.pode(user, "vendas", "use") else None
         try:
             base = _montar_pedido(estado, ped.get("items"), vendedor, oid, publico=True)
         except ErroNegocio:
             continue
-        taxa = round(max(0.0, _num(ped.get("serviceFee"))), 2)
+        pct = _num((estado.get("settings") or {}).get("serviceFeePercent"), 10)
+        taxa = round(base["subtotal"] * pct / 100, 2) if _num(ped.get("serviceFee")) > 0 else 0.0
         agora = _agora()
         pedido = {
             "id": oid, "tableId": _txt(ped.get("tableId"), 40), "customerName": _txt(ped.get("customerName"), 80),
@@ -583,24 +600,26 @@ def aplicar_sync_publico(estado: Dict, payload: Dict, user: Optional[Dict]) -> i
             "orderStatus": "recebido", "createdAt": agora.replace("T", " ")[:16], "ts": agora,
             "serviceFee": taxa, "total": round(base["subtotal"] + taxa, 2),
             "sellerId": vendedor["id"] if vendedor else "", "sellerName": vendedor["name"] if vendedor else "",
-            **base,
+            "clientRef": ref, **base,
         }
         mesa = next((t for t in estado.get("tables", []) if t.get("id") == pedido["tableId"]), None)
         if mesa:
             mesa["status"] = "ocupada"
         estado["orders"].insert(0, pedido)
-        ids.add(oid)
+        refs.add(ref)
         adicionados += 1
 
-    ids_ch = {c.get("id") for c in estado["waiterCalls"]}
+    refs_ch = {c.get("clientRef") for c in estado["waiterCalls"] if c.get("clientRef")}
     for ch in (payload.get("waiterCalls") or [])[:10]:
-        if not isinstance(ch, dict) or not ch.get("id") or ch["id"] in ids_ch:
+        ref = str((ch or {}).get("id") or "") if isinstance(ch, dict) else ""
+        if not ID_SEGURO.fullmatch(ref) or ref in refs_ch:
             continue
         estado["waiterCalls"].insert(0, {
-            "id": _txt(ch["id"], 40), "tableId": _txt(ch.get("tableId"), 40), "type": _txt(ch.get("type"), 20),
+            "id": _id("CALL"), "clientRef": ref, "tableId": _txt(ch.get("tableId"), 40),
+            "type": "carvao" if ch.get("type") == "carvao" else "garcom",
             "message": _txt(ch.get("message"), 160), "createdAt": _txt(ch.get("createdAt"), 10), "status": "pendente",
         })
-        ids_ch.add(ch["id"])
+        refs_ch.add(ref)
         adicionados += 1
     return adicionados
 
@@ -1023,7 +1042,7 @@ def chat_confirmar(estado: Dict, p: Dict) -> Dict:
         raise ErroNegocio("Esta conversa foi encerrada.")
     desde = int(p.get("since") or 0)
     linhas = [{"itemId": i.get("itemId"), "qty": i.get("qty"), "notes": i.get("notes", "")} for i in (p.get("items") or [])[:20]]
-    oid = f"PED-{secrets.randbelow(900000) + 100000}"
+    oid = _novo_id_pedido(estado)
     base = _montar_pedido(estado, linhas, None, oid, publico=True)
     pct = _num((estado.get("settings") or {}).get("serviceFeePercent"), 10)
     taxa = round(base["subtotal"] * pct / 100, 2) if (estado.get("settings") or {}).get("enableServiceFeeByDefault") else 0.0

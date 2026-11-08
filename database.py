@@ -13,9 +13,10 @@ Gerencia:
 """
 
 import json
-import sqlite3
 from pathlib import Path
 from typing import Dict, Any
+
+import storage
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -23,8 +24,20 @@ DB_SQLITE_PATH = DATA_DIR / "imperador_lounge.db"
 DB_JSON_PATH = DATA_DIR / "db.json"
 
 
+SEED_PATH = BASE_DIR / "seed_data.json"
+
+
 def obter_dados_iniciais_imperador() -> Dict[str, Any]:
-    """Retorna a estrutura inicial completa para o Imperador Lounge Bar."""
+    """Dados iniciais: seed_data.json (o mesmo cardápio do navegador) ou o padrão abaixo."""
+    if SEED_PATH.exists():
+        try:
+            return json.loads(SEED_PATH.read_text(encoding="utf-8"))
+        except Exception as exc:
+            print(f"[AVISO] seed_data.json inválido: {exc}")
+    return _dados_padrao()
+
+
+def _dados_padrao() -> Dict[str, Any]:
     return {
         "settings": {
             "brandName": "IMPERADOR LOUNGE BAR",
@@ -658,82 +671,21 @@ def obter_dados_iniciais_imperador() -> Dict[str, Any]:
 
 
 def inicializar_banco() -> None:
-    """Cria a pasta data/ e inicializa o banco SQLite3 + arquivo JSON caso não existam."""
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(DB_SQLITE_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS system_state (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                state_json TEXT NOT NULL,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        cursor.execute("SELECT state_json FROM system_state WHERE id = 1")
-        row = cursor.fetchone()
-        if not row:
-            estado_inicial = obter_dados_iniciais_imperador()
-            if DB_JSON_PATH.exists():
-                try:
-                    estado_inicial = json.loads(DB_JSON_PATH.read_text(encoding="utf-8"))
-                except Exception:
-                    pass
-            json_str = json.dumps(estado_inicial, ensure_ascii=False, indent=2)
-            cursor.execute(
-                "INSERT INTO system_state (id, state_json) VALUES (1, ?)",
-                (json_str,),
-            )
-            DB_JSON_PATH.write_text(json_str, encoding="utf-8")
-        conn.commit()
+    """Cria as tabelas (PostgreSQL ou SQLite) e grava os dados iniciais se o banco estiver vazio."""
+    st = storage.store()
+    if st.carregar() is None:
+        st.salvar(obter_dados_iniciais_imperador())
 
 
 def ler_estado_completo() -> Dict[str, Any]:
-    """Lê o estado completo do banco SQLite3 (com fallback automático para db.json)."""
-    inicializar_banco()
-    try:
-        with sqlite3.connect(DB_SQLITE_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT state_json FROM system_state WHERE id = 1")
-            row = cursor.fetchone()
-            if row and row[0]:
-                return json.loads(row[0])
-    except Exception as exc:
-        print(f"[AVISO] Erro ao ler SQLite: {exc}")
-
-    if DB_JSON_PATH.exists():
-        try:
-            return json.loads(DB_JSON_PATH.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-
-    return obter_dados_iniciais_imperador()
+    """Lê o estado completo do banco (PostgreSQL no Railway, SQLite no uso local)."""
+    estado = storage.store().carregar()
+    return estado if estado is not None else obter_dados_iniciais_imperador()
 
 
 def salvar_estado_completo(novo_estado: Dict[str, Any]) -> bool:
-    """Salva o estado completo simultaneamente no SQLite3 (imperador_lounge.db) e em data/db.json."""
-    inicializar_banco()
-    try:
-        json_str = json.dumps(novo_estado, ensure_ascii=False, indent=2)
-        with sqlite3.connect(DB_SQLITE_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                INSERT INTO system_state (id, state_json, updated_at)
-                VALUES (1, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(id) DO UPDATE SET
-                    state_json = excluded.state_json,
-                    updated_at = CURRENT_TIMESTAMP
-                """,
-                (json_str,),
-            )
-            conn.commit()
-        DB_JSON_PATH.write_text(json_str, encoding="utf-8")
-        return True
-    except Exception as exc:
-        print(f"[ERRO] Falha ao salvar estado no SQLite: {exc}")
-        return False
+    """Grava o estado no banco (no PostgreSQL só as linhas alteradas)."""
+    return storage.store().salvar(novo_estado)
 
 
 def calcular_resumo_financeiro_dre(state: Dict[str, Any]) -> Dict[str, Any]:
