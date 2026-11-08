@@ -23,6 +23,7 @@ if hasattr(time, "tzset"):
 
 import base64
 import json
+import socket
 import mimetypes
 import os
 import re
@@ -176,7 +177,8 @@ class ImperadorPythonHandler(BaseHTTPRequestHandler):
             encaminhado = (self.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
             if encaminhado:
                 return encaminhado
-        return self.client_address[0] if self.client_address else "?"
+        ip = self.client_address[0] if self.client_address else "?"
+        return ip[7:] if ip.startswith("::ffff:") else ip
 
     def _negar(self, user) -> None:
         if not user:
@@ -503,11 +505,32 @@ class ImperadorPythonHandler(BaseHTTPRequestHandler):
         sys.stdout.write(f"[IMPERADOR] {self.address_string()} - {format % args}\n")
 
 
+class ServidorDuplo(ThreadingHTTPServer):
+    """Aceita IPv4 e IPv6 na mesma porta (localhost responde rápido no Windows e no Railway)."""
+    address_family = socket.AF_INET6
+    daemon_threads = True
+
+    def server_bind(self):
+        try:
+            self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        except (AttributeError, OSError):
+            pass
+        super().server_bind()
+
+
+def criar_servidor() -> ThreadingHTTPServer:
+    try:
+        return ServidorDuplo(("::", PORT), ImperadorPythonHandler)
+    except OSError:
+        ThreadingHTTPServer.daemon_threads = True
+        return ThreadingHTTPServer(("0.0.0.0", PORT), ImperadorPythonHandler)
+
+
 def iniciar_servidor() -> None:
     inicializar_banco()
     auth.inicializar_auth()
     carregar_estado()
-    servidor = ThreadingHTTPServer(("0.0.0.0", PORT), ImperadorPythonHandler)
+    servidor = criar_servidor()
 
     url_local = f"http://localhost:{PORT}"
     print("=" * 74)

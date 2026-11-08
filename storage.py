@@ -71,7 +71,7 @@ def _b(v) -> bool:
 
 
 def _txt(v) -> Optional[str]:
-    return None if v is None else str(v)
+    return None if v is None or v == "" else str(v)
 
 
 def g(chave: str, conv: Callable = _txt, padrao=None) -> Callable:
@@ -124,7 +124,7 @@ COLECOES: List[Dict[str, Any]] = [
         ("message", "TEXT", g("message")), ("created_label", "TEXT", g("createdAt"))]},
     {"caminho": "chats", "tabela": "chats", "ordem": "seq", "colunas": [
         ("table_id", "TEXT", g("table")), ("customer_name", "TEXT", g("name")), ("status", "TEXT", g("status")),
-        ("created_at", "TIMESTAMP", g("createdAt", _ts)), ("updated_at", "TIMESTAMP", g("updatedAt", _ts)),
+        ("created_at", "TIMESTAMP", g("createdAt", _ts)), ("last_message_at", "TIMESTAMP", g("updatedAt", _ts)),
         ("unread_staff", "INTEGER", g("unreadStaff", lambda v: int(_num(v) or 0)))]},
     {"caminho": "purchases", "tabela": "legacy_purchases", "ordem": "pos", "colunas": [
         ("supplier", "TEXT", g("supplier")), ("total", "NUMERIC(12,2)", g("total", _num))]},
@@ -211,6 +211,119 @@ def _todos_os_caminhos() -> set:
 
 
 # ===========================================================================
+# SQL do esquema (usado pelo servidor e pelo script criar_tabelas.py)
+# ===========================================================================
+COMENTARIOS = {
+    "categories": "Categorias do cardápio (Lanches, Tabacaria, Drinks...)",
+    "menu_items": "Itens vendidos no cardápio, preço, margem e disponibilidade",
+    "menu_item_composition": "Ficha técnica: produtos do estoque consumidos por item vendido",
+    "dining_tables": "Mesas e camarotes do salão",
+    "social_posts": "Postagens publicadas no site e nas redes sociais",
+    "orders": "Pedidos e vendas (PDV, QR Code, tablet e chat)",
+    "order_items": "Itens de cada pedido",
+    "waiter_calls": "Chamados de garçom, conta e carvão",
+    "chats": "Conversas do pedido pelo chat (mensagens no JSONB)",
+    "legacy_purchases": "Compras da versão antiga do sistema",
+    "fixed_expenses": "Despesas fixas mensais",
+    "employees": "Funcionários e folha de pagamento",
+    "products": "Produtos do estoque com saldo no depósito, bar (venda) e bar (uso)",
+    "stock_movements": "Histórico completo de movimentações de estoque",
+    "receipts": "Notas de entrada (recebimento e aprovação)",
+    "receipt_items": "Itens das notas de entrada, quantidade da nota x conferida",
+    "purchase_orders": "Pedidos de compra enviados aos fornecedores",
+    "purchase_order_items": "Itens dos pedidos de compra",
+    "inventories": "Inventários (contagem física)",
+    "inventory_items": "Contagem de cada produto no inventário",
+    "devices": "Tablets cadastrados no IAM",
+    "app_config": "Configurações (site, PIX, TV, fornecedores) em chave/valor",
+    "admin_users": "Usuários do painel (senha com PBKDF2 + salt)",
+    "admin_roles": "Perfis de permissão criados ou alterados no IAM",
+    "media": "Fotos enviadas pelo painel",
+    "schema_migrations": "Versão do esquema do banco",
+}
+
+
+NL = "\n"
+
+
+def gerar_sql_esquema() -> List[str]:
+    """Comandos SQL (PostgreSQL) que criam todas as tabelas. Podem ser executados mais de uma vez."""
+    cmds: List[str] = [
+        """CREATE TABLE IF NOT EXISTS schema_migrations (
+  version INTEGER PRIMARY KEY,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+)""",
+        """CREATE TABLE IF NOT EXISTS app_config (
+  key TEXT PRIMARY KEY,
+  data JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+)""",
+    ]
+    for c in COLECOES:
+        cols = "".join(f"  {nome} {tipo},{NL}" for nome, tipo, _ in c["colunas"])
+        cmds.append(f"""CREATE TABLE IF NOT EXISTS {c['tabela']} (
+  id TEXT PRIMARY KEY,
+{cols}  sort_key BIGINT NOT NULL DEFAULT 0,
+  data JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+)""")
+        cmds.append(f"CREATE INDEX IF NOT EXISTS ix_{c['tabela']}_sort ON {c['tabela']} (sort_key)")
+        for idx in c.get("indices", []):
+            cmds.append(f"CREATE INDEX IF NOT EXISTS ix_{c['tabela']}_{idx} ON {c['tabela']} ({idx})")
+        f = c.get("filhos")
+        if f:
+            fcols = "".join(f"  {nome} {tipo},{NL}" for nome, tipo, _ in f["colunas"])
+            cmds.append(f"""CREATE TABLE IF NOT EXISTS {f['tabela']} (
+  id BIGSERIAL PRIMARY KEY,
+  parent_id TEXT NOT NULL REFERENCES {c['tabela']}(id) ON DELETE CASCADE,
+  line_no INTEGER NOT NULL,
+{fcols}  data JSONB NOT NULL
+)""")
+            cmds.append(f"CREATE INDEX IF NOT EXISTS ix_{f['tabela']}_parent ON {f['tabela']} (parent_id)")
+    cmds += [
+        """CREATE TABLE IF NOT EXISTS admin_roles (
+  key TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  permissions JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+)""",
+        """CREATE TABLE IF NOT EXISTS admin_users (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE,
+  name TEXT,
+  role TEXT NOT NULL,
+  permissions JSONB NOT NULL,
+  commission_percent NUMERIC(6,2) NOT NULL DEFAULT 0,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  must_change BOOLEAN NOT NULL DEFAULT FALSE,
+  password_salt TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+)""",
+        """CREATE TABLE IF NOT EXISTS media (
+  name TEXT PRIMARY KEY,
+  mime TEXT NOT NULL,
+  content BYTEA NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+)""",
+    ]
+    for tabela, texto in COMENTARIOS.items():
+        cmds.append(f"COMMENT ON TABLE {tabela} IS '{texto}'")
+    cmds.append("INSERT INTO schema_migrations (version) VALUES (1) ON CONFLICT DO NOTHING")
+    return cmds
+
+
+def tabelas() -> List[str]:
+    nomes = ["schema_migrations", "app_config"]
+    for c in COLECOES:
+        nomes.append(c["tabela"])
+        if c.get("filhos"):
+            nomes.append(c["filhos"]["tabela"])
+    return nomes + ["admin_roles", "admin_users", "media"]
+
+
+# ===========================================================================
 # Backend PostgreSQL
 # ===========================================================================
 class PostgresStore:
@@ -258,46 +371,8 @@ class PostgresStore:
 
     # ------------------------------------------------------------ esquema
     def criar_esquema(self) -> None:
-        def ddl(cur):
-            cur.execute("""CREATE TABLE IF NOT EXISTS schema_migrations (
-                version INTEGER PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
-            cur.execute("""CREATE TABLE IF NOT EXISTS app_config (
-                key TEXT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
-            for c in COLECOES:
-                cols = ",\n".join(f"  {nome} {tipo}" for nome, tipo, _ in c["colunas"])
-                cur.execute(f"""CREATE TABLE IF NOT EXISTS {c['tabela']} (
-                  id TEXT PRIMARY KEY,
-{cols},
-                  sort_key BIGINT NOT NULL DEFAULT 0,
-                  data JSONB NOT NULL,
-                  updated_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
-                cur.execute(f"CREATE INDEX IF NOT EXISTS ix_{c['tabela']}_sort ON {c['tabela']} (sort_key)")
-                for idx in c.get("indices", []):
-                    cur.execute(f"CREATE INDEX IF NOT EXISTS ix_{c['tabela']}_{idx} ON {c['tabela']} ({idx})")
-                f = c.get("filhos")
-                if f:
-                    fcols = ",\n".join(f"  {nome} {tipo}" for nome, tipo, _ in f["colunas"])
-                    cur.execute(f"""CREATE TABLE IF NOT EXISTS {f['tabela']} (
-                      id BIGSERIAL PRIMARY KEY,
-                      parent_id TEXT NOT NULL REFERENCES {c['tabela']}(id) ON DELETE CASCADE,
-                      line_no INTEGER NOT NULL,
-{fcols},
-                      data JSONB NOT NULL)""")
-                    cur.execute(f"CREATE INDEX IF NOT EXISTS ix_{f['tabela']}_parent ON {f['tabela']} (parent_id)")
-            cur.execute("""CREATE TABLE IF NOT EXISTS admin_roles (
-                key TEXT PRIMARY KEY, label TEXT NOT NULL, permissions JSONB NOT NULL,
-                updated_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
-            cur.execute("""CREATE TABLE IF NOT EXISTS admin_users (
-                id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, name TEXT, role TEXT NOT NULL,
-                permissions JSONB NOT NULL, commission_percent NUMERIC(6,2) NOT NULL DEFAULT 0,
-                active BOOLEAN NOT NULL DEFAULT TRUE, must_change BOOLEAN NOT NULL DEFAULT FALSE,
-                password_salt TEXT NOT NULL, password_hash TEXT NOT NULL, created_at TEXT,
-                updated_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
-            cur.execute("""CREATE TABLE IF NOT EXISTS media (
-                name TEXT PRIMARY KEY, mime TEXT NOT NULL, content BYTEA NOT NULL,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
-            cur.execute("INSERT INTO schema_migrations (version) VALUES (1) ON CONFLICT DO NOTHING")
-        self._executar(ddl)
+        comandos = gerar_sql_esquema()
+        self._executar(lambda cur: [cur.execute(c) for c in comandos])
 
     # ------------------------------------------------------------ estado
     def carregar(self) -> Optional[Dict]:
