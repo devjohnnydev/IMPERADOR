@@ -3,7 +3,7 @@
 Banco de Dados SQLite3 + Persistência JSON para o Sistema IMPERADOR LOUNGE BAR.
 Gerencia:
 - Configurações do Site Principal e PIX
-- Cardápio Digital Completo (Estilo Galpão 03 / Tagme Menu: Tabacaria, Rosh, Combos, Drinks, Cervejas, Porções, Burgers, Sobremesas)
+- Cardápio Digital Completo (Tabacaria, Rosh, Combos, Drinks, Cervejas, Porções, Burgers, Sobremesas)
 - Mesas & Camarotes VIP
 - Tudo que Vender (Pedidos via QR Code, Tablet PIX e Balcão PDV)
 - Tudo que Comprar (Compras de fornecedores e controle de estoque)
@@ -23,15 +23,15 @@ DB_SQLITE_PATH = DATA_DIR / "imperador_lounge.db"
 DB_JSON_PATH = DATA_DIR / "db.json"
 
 
-def obter_dados_iniciais_galpao_imperador() -> Dict[str, Any]:
-    """Retorna a estrutura inicial completa inspirada no Galpão 03 (Tagme Menu) para o Imperador Lounge Bar."""
+def obter_dados_iniciais_imperador() -> Dict[str, Any]:
+    """Retorna a estrutura inicial completa para o Imperador Lounge Bar."""
     return {
         "settings": {
             "brandName": "IMPERADOR LOUNGE BAR",
             "brandSubtitle": "Lounge • Tabacaria • Gastrobar • Drinks Autorais",
-            "tagline": "A Experiência Imperial inspirada no melhor estilo Lounge & Tabacaria (Galpão 03 Edition)",
+            "tagline": "A Experiência Imperial inspirada no melhor estilo Lounge & Tabacaria",
             "instagram": "@imperadorloungebar",
-            "referenceNote": "Layout & Cardápio Digital estilo Tagme Menu (O Galpão 03)",
+            "referenceNote": "Cardápio Digital Imperador",
             "address": "Av. Imperial, 300 - Centro • Lounge & Deck VIP",
             "openingHours": "Terça a Domingo • 17:00 às 04:00",
             "wifiSsid": "IMPERADOR_LOUNGE_5G",
@@ -48,7 +48,7 @@ def obter_dados_iniciais_galpao_imperador() -> Dict[str, Any]:
             "heroCoverUrl": "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=1400&q=80",
             "adminPin": "1234",
             "instagramConfig": {
-                "profileUrl": "https://www.instagram.com/ogalpao03/",
+                "profileUrl": "https://www.instagram.com/imperadorloungebar/",
                 "autoPostNewProducts": True,
                 "autoPostPromotions": True,
                 "igUserId": "",
@@ -60,7 +60,7 @@ def obter_dados_iniciais_galpao_imperador() -> Dict[str, Any]:
             {
                 "id": "POST-IG-01",
                 "title": "🔥 SEXTA IMPERIAL: Double Sessão Rosh (Love 66 / Ziggy) + DJ Residente",
-                "caption": "👑 IMPERADOR LOUNGE BAR\n\n🔥 Hoje tem Double Sessão de Narguilé com as melhores essências (Adalya Love 66, Ziggy Tropical e Zomo Swiss Alps)!\n💰 De R$ 85,00 por apenas *R$ 69,90*!\n\n📲 Peça direto no Tablet da sua mesa com PIX QR Code!\n#ImperadorLoungeBar #Tabacaria #Narguile #Galpao03Style #LoungeVIP",
+                "caption": "👑 IMPERADOR LOUNGE BAR\n\n🔥 Hoje tem Double Sessão de Narguilé com as melhores essências (Adalya Love 66, Ziggy Tropical e Zomo Swiss Alps)!\n💰 De R$ 85,00 por apenas *R$ 69,90*!\n\n📲 Peça direto no Tablet da sua mesa com PIX QR Code!\n#ImperadorLoungeBar #Tabacaria #Narguile #LoungeVIP",
                 "imageUrl": "https://images.unsplash.com/photo-1527661591475-527312dd65f5?auto=format&fit=crop&w=800&q=80",
                 "price": 69.90,
                 "badge": "Story & Feed",
@@ -85,7 +85,7 @@ def obter_dados_iniciais_galpao_imperador() -> Dict[str, Any]:
             },
             {
                 "id": "POST-IG-03",
-                "title": "🥩 Tábua Imperial Galpão 03: Picanha na Chapa + Fritas Cheddar & Bacon",
+                "title": "🥩 Tábua Imperial: Picanha na Chapa + Fritas Cheddar & Bacon",
                 "caption": "👑 GASTRONOMIA DE LOUNGE • IMPERADOR\n\n🔥 500g de Picanha Maturada na chapa fumegante + 400g de Fritas com Cheddar Cremoso e Bacon!\n💰 Apenas *R$ 119,90* (Serve 3 a 4 pessoas)\n\n#ImperadorLoungeBar #PicanhaNaChapa #Gastrobar #Porcoes",
                 "imageUrl": "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=800&q=80",
                 "price": 119.90,
@@ -120,7 +120,7 @@ def obter_dados_iniciais_galpao_imperador() -> Dict[str, Any]:
                 "minStock": 15,
                 "unit": "sessão",
                 "featured": True,
-                "badge": "Campeão Galpão 03",
+                "badge": "Campeão da Casa",
                 "prepTime": "8 min",
                 "image": "https://images.unsplash.com/photo-1527661591475-527312dd65f5?auto=format&fit=crop&w=800&q=80",
                 "options": [
@@ -128,7 +128,7 @@ def obter_dados_iniciais_galpao_imperador() -> Dict[str, Any]:
                         "groupName": "Sabor do 1º Rosh (Essência)",
                         "required": True,
                         "choices": [
-                            {"name": "Mix Galpão/Imperador (Maracujá + Menta + Melancia)", "price": 0},
+                            {"name": "Mix Imperador (Maracujá + Menta + Melancia)", "price": 0},
                             {"name": "Adalya Love 66 (Melancia, Melão, Maracujá e Menta)", "price": 0},
                             {"name": "Ziggy Tropical / Frutas Amarelas c/ Toque Ice", "price": 0},
                             {"name": "Ziggy Burley Melancia Atômica + Cane Mint", "price": 0},
@@ -178,7 +178,7 @@ def obter_dados_iniciais_galpao_imperador() -> Dict[str, Any]:
             {
                 "id": "item-tabua-imperador-chapa",
                 "categoryId": "destaques",
-                "name": "Tábua Imperial Galpão 03 (Picanha + Fritas Cheddar & Bacon)",
+                "name": "Tábua Imperial (Picanha + Fritas Cheddar & Bacon)",
                 "description": "500g de Tiras de Picanha Maturada grelhada na chapa fumegante com cebola roxa caramelizada, acompanhada de 400g de Batata Frita crocante coberta com Cheddar cremoso, farofa de bacon, pão de alho, vinagrete, farofa temperada e maionese verde da casa.",
                 "price": 119.90,
                 "oldPrice": 139.90,
@@ -410,7 +410,7 @@ def obter_dados_iniciais_galpao_imperador() -> Dict[str, Any]:
             {
                 "id": "item-batata-suprema",
                 "categoryId": "porcoes",
-                "name": "Batata Frita Suprema Galpão 03 (Cheddar Cremoso & Bacon)",
+                "name": "Batata Frita Suprema (Cheddar Cremoso & Bacon)",
                 "description": "500g de batatas fritas corte crinkle/palito super crocantes, generosamente cobertas com molho cheddar derretido, cubos de bacon defumado e cebolinha fresca.",
                 "price": 48.90,
                 "costPrice": 15.20,
@@ -544,7 +544,7 @@ def obter_dados_iniciais_galpao_imperador() -> Dict[str, Any]:
                 "id": "PED-9042",
                 "tableId": "Mesa 01",
                 "customerName": "Matheus Silva",
-                "source": "Cardápio QR Code (Tagme)",
+                "source": "Cardápio QR Code",
                 "paymentMethod": "PIX QR Code",
                 "paymentStatus": "pago",
                 "orderStatus": "entregue",
@@ -555,7 +555,7 @@ def obter_dados_iniciais_galpao_imperador() -> Dict[str, Any]:
                 "costTotal": 102.30,
                 "items": [
                     {"itemId": "item-balde-heineken-6", "name": "Balde Imperial c/ 6 Heineken Long Neck 330ml", "qty": 1, "price": 79.90, "costPrice": 37.80, "notes": "Trazer Taças Geladas"},
-                    {"itemId": "item-tabua-imperador-chapa", "name": "Tábua Imperial Galpão 03 (Picanha + Fritas Cheddar & Bacon)", "qty": 1, "price": 119.90, "costPrice": 46.00, "notes": "Ao Ponto Suculenta"},
+                    {"itemId": "item-tabua-imperador-chapa", "name": "Tábua Imperial (Picanha + Fritas Cheddar & Bacon)", "qty": 1, "price": 119.90, "costPrice": 46.00, "notes": "Ao Ponto Suculenta"},
                     {"itemId": "item-sessao-simples", "name": "Sessão Narguilé Tradicional (1 Rosh Completo)", "qty": 1, "price": 40.00, "costPrice": 18.50, "notes": "Cítrico Gelado"},
                 ],
             },
@@ -574,7 +574,7 @@ def obter_dados_iniciais_galpao_imperador() -> Dict[str, Any]:
                 "costTotal": 205.80,
                 "items": [
                     {"itemId": "item-combo-old-parr", "name": "Combo Whisky Grand Old Parr 12 Anos 1L + 4 Red Bull + 4 Gelos de Coco", "qty": 1, "price": 369.90, "costPrice": 158.00, "notes": "4x Gelo de Coco"},
-                    {"itemId": "item-batata-suprema", "name": "Batata Frita Suprema Galpão 03 (Cheddar Cremoso & Bacon)", "qty": 1, "price": 48.90, "costPrice": 15.20, "notes": ""},
+                    {"itemId": "item-batata-suprema", "name": "Batata Frita Suprema (Cheddar Cremoso & Bacon)", "qty": 1, "price": 48.90, "costPrice": 15.20, "notes": ""},
                     {"itemId": "item-coxinha-sem-massa", "name": "Porção de Mini Coxinhas Cremosas Sem Massa c/ Catupiry (10 un)", "qty": 1, "price": 44.90, "costPrice": 14.00, "notes": ""},
                     {"itemId": "item-caipiroska-imperial", "name": "Caipiroska / Caipirinha Gourmet (500ml c/ Picolé)", "qty": 2, "price": 29.95, "costPrice": 9.30, "notes": "Morango c/ Maracujá"},
                 ],
@@ -639,7 +639,7 @@ def obter_dados_iniciais_galpao_imperador() -> Dict[str, Any]:
             {"id": "FUNC-06", "name": "Marcos Segurança", "role": "Segurança & Recepção Portaria", "shift": "Sexta a Domingo (19h - 04h)", "phone": "(11) 99311-0092", "baseSalary": 1400.00, "bonuses": 0.00, "advances": 0.00, "paymentType": "Diária / Fim de Semana", "status": "ativo", "paidThisMonth": False},
         ],
         "fixedExpenses": [
-            {"id": "FIX-01", "name": "Aluguel do Galpão / Ponto Comercial Imperador", "category": "Infraestrutura", "dueDate": "Dia 10", "amount": 3500.00, "status": "pago", "notes": "Contrato Comercial Salão + Deck"},
+            {"id": "FIX-01", "name": "Aluguel do Ponto Comercial Imperador", "category": "Infraestrutura", "dueDate": "Dia 10", "amount": 3500.00, "status": "pago", "notes": "Contrato Comercial Salão + Deck"},
             {"id": "FIX-02", "name": "Energia Elétrica Trifásica (Cervejeiras, Ar, Som & Iluminação LED)", "category": "Utilidades", "dueDate": "Dia 15", "amount": 1180.00, "status": "pago", "notes": "Fatura mensal"},
             {"id": "FIX-03", "name": "Água, Esgoto & Gás Industrial Cozinha", "category": "Utilidades", "dueDate": "Dia 18", "amount": 460.00, "status": "pago", "notes": "Sabesp + Recarga cilindro GLP P45"},
             {"id": "FIX-04", "name": "Internet Fibra 1Gbps Dedicada (Wi-Fi Clientes + Tablets PIX)", "category": "Tecnologia", "dueDate": "Dia 20", "amount": 199.90, "status": "pago", "notes": "Link principal + roteador Mesh"},
@@ -674,7 +674,7 @@ def inicializar_banco() -> None:
         cursor.execute("SELECT state_json FROM system_state WHERE id = 1")
         row = cursor.fetchone()
         if not row:
-            estado_inicial = obter_dados_iniciais_galpao_imperador()
+            estado_inicial = obter_dados_iniciais_imperador()
             if DB_JSON_PATH.exists():
                 try:
                     estado_inicial = json.loads(DB_JSON_PATH.read_text(encoding="utf-8"))
@@ -708,7 +708,7 @@ def ler_estado_completo() -> Dict[str, Any]:
         except Exception:
             pass
 
-    return obter_dados_iniciais_galpao_imperador()
+    return obter_dados_iniciais_imperador()
 
 
 def salvar_estado_completo(novo_estado: Dict[str, Any]) -> bool:

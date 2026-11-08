@@ -1,273 +1,406 @@
 # -*- coding: utf-8 -*-
 """
 ===============================================================================
-👑 IMPERADOR LOUNGE BAR - SERVIDOR PRINCIPAL EM PYTHON (SQLite3 + PIX BRCode)
+IMPERADOR LOUNGE BAR - SERVIDOR PRINCIPAL EM PYTHON (SQLite3 + PIX BRCode)
 ===============================================================================
-Sistema Completo para Restaurante, Lounge Bar e Tabacaria (Estilo O Galpão 03 / Tagme):
-1. Cardápio Digital QR Code (Tagme Menu Style)
-2. Modo Tablet Moderno na Mesa (Autoatendimento + QR Code PIX Oficial c/ CRC16)
-3. Painel Administrador & ERP Completo:
-   - Controle de Tudo do Site Principal
-   - Tudo que Vender (Pedidos, Comandas, PIX, Cartão, Dinheiro)
-   - Tudo que Comprar (Fornecedores, Notas e Controle de Estoque)
-   - Funcionários (Salários, Diárias, Comissões e Vales)
-   - Gastos Fixos (Aluguel, Energia, Água, Internet, Contabilidade, Marketing)
-   - Lucro Líquido Real (DRE Automático em Python)
+1. Site / Home e Cardápio Digital (público)
+2. Tablet na Mesa com PIX QR Code (público)
+3. Painel administrativo com usuários, perfis e permissões por módulo:
+   Recebimento -> Aprovação -> Estoque (depósito / bar / uso) -> Vendas,
+   Produtos & Preços (ficha técnica e margem), Comissões, Financeiro, Site...
 
 Como executar:
     python app.py
 """
 
+import base64
 import json
 import mimetypes
 import os
+import re
 import sys
 import threading
+import uuid
 import webbrowser
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+import auth
+import erp
 from database import (
     calcular_resumo_financeiro_dre,
     inicializar_banco,
     ler_estado_completo,
-    obter_dados_iniciais_galpao_imperador,
+    obter_dados_iniciais_imperador,
     salvar_estado_completo,
 )
 from instagram_publisher import (
     gerar_legenda_instagram,
+    publicar_no_facebook_pagina,
     publicar_no_instagram_graph_api,
 )
 from pix_qrcode import gerar_payload_pix_brcode
 
 BASE_DIR = Path(__file__).resolve().parent
 PUBLIC_DIR = BASE_DIR / "public"
+UPLOADS_DIR = PUBLIC_DIR / "uploads"
 PORT = int(os.environ.get("PORT", 8000))
+MAX_CORPO = 20 * 1024 * 1024
+
+# Uma gravação por vez no estado (evita que duas ações simultâneas se sobrescrevam)
+_estado_lock = threading.Lock()
+
+
+def _url_absoluta(url: str, estado: dict) -> str:
+    """Converte /uploads/foto.jpg em https://seusite.com/uploads/foto.jpg (exigido pelas redes sociais)."""
+    url = (url or "").strip()
+    if not url or url.startswith(("http://", "https://", "data:")):
+        return url
+    base = ((estado.get("home") or {}).get("publicSiteUrl") or "").strip().rstrip("/")
+    if not base:
+        return url
+    return base + (url if url.startswith("/") else "/" + url)
+
+
+def carregar_estado() -> dict:
+    estado = ler_estado_completo()
+    if erp.garantir_erp(estado):
+        salvar_estado_completo(estado)
+    return estado
+
+
+def estado_publico(estado: dict) -> dict:
+    """O que qualquer visitante (cardápio, tablet, site) pode receber."""
+    cfg = dict(estado.get("settings", {}) or {})
+    cfg.pop("adminPin", None)
+    ig = dict(cfg.get("instagramConfig", {}) or {})
+    for chave in ("accessToken", "igUserId", "webhookUrl"):
+        ig.pop(chave, None)
+    cfg["instagramConfig"] = ig
+    home = dict(estado.get("home", {}) or {})
+    home.pop("facebookConfig", None)
+    ocultos = ("costPrice", "minStock", "composition", "targetMarkup", "extraCost")
+    itens = [{k: v for k, v in i.items() if k not in ocultos} for i in (estado.get("menuItems") or [])]
+    pedidos = []
+    for o in estado.get("orders", []) or []:
+        if o.get("paymentStatus") == "pago" or o.get("orderStatus") == "cancelado":
+            continue
+        limpo = {k: v for k, v in o.items() if k not in ("costTotal", "stockUsage", "sellerId")}
+        limpo["items"] = [{k: v for k, v in ln.items() if k != "costPrice"} for ln in o.get("items", [])]
+        pedidos.append(limpo)
+    return {
+        "settings": cfg, "home": home,
+        "categories": estado.get("categories", []), "menuItems": itens,
+        "tables": estado.get("tables", []), "socialPosts": estado.get("socialPosts", []),
+        "orders": pedidos, "waiterCalls": [], "purchases": [], "employees": [], "fixedExpenses": [],
+        "historicalRevenueAdjustment": {}, "erp": {"products": [], "receipts": [], "movements": []},
+    }
+
+
+def resposta_estado(estado: dict, user) -> dict:
+    if not user:
+        return {"ok": True, "authenticated": False, "engine": "Python 3 + SQLite3", "state": estado_publico(estado)}
+    dados = {"ok": True, "authenticated": True, "user": user, "engine": "Python 3 + SQLite3",
+             "state": erp.estado_para_usuario(estado, user)}
+    if auth.pode(user, "financeiro"):
+        dados["drePython"] = calcular_resumo_financeiro_dre(estado)
+    if auth.pode(user, "usuarios") or auth.pode(user, "comissoes") or auth.pode(user, "vendas", "edit"):
+        dados["users"] = auth.listar_usuarios()
+        dados["roles"] = auth.perfis_publicos()
+    return dados
 
 
 class ImperadorPythonHandler(BaseHTTPRequestHandler):
-    """Handler HTTP em Python para servir a API REST + Interface Web Moderna."""
+    """API REST + arquivos estáticos."""
 
-    def _enviar_headers_cors(self) -> None:
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-
+    # ----------------------------------------------------------------- utilidades
     def _responder_json(self, status_code: int, dados: dict) -> None:
         corpo = json.dumps(dados, ensure_ascii=False).encode("utf-8")
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(corpo)))
-        self._enviar_headers_cors()
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(corpo)
 
-    def do_OPTIONS(self) -> None:
-        self.send_response(204)
-        self._enviar_headers_cors()
-        self.end_headers()
+    def _token(self) -> str:
+        cab = self.headers.get("Authorization", "")
+        return cab[7:].strip() if cab.startswith("Bearer ") else ""
 
+    def _usuario(self):
+        return auth.usuario_do_token(self._token())
+
+    def _ip(self) -> str:
+        return self.client_address[0] if self.client_address else "?"
+
+    def _negar(self, user) -> None:
+        if not user:
+            self._responder_json(401, {"ok": False, "error": "Sua sessão expirou. Entre novamente."})
+        else:
+            self._responder_json(403, {"ok": False, "error": "Seu perfil não tem permissão para isso."})
+
+    # ----------------------------------------------------------------------- GET
     def do_GET(self) -> None:
-        url_parsed = urlparse(self.path)
-        rota = url_parsed.path
-        query = parse_qs(url_parsed.query)
+        url = urlparse(self.path)
+        rota = url.path
+        query = parse_qs(url.query)
 
-        # 1. API: Obter Estado Completo do SQLite + DRE Calculado em Python
         if rota == "/api/state":
-            estado = ler_estado_completo()
-            dre = calcular_resumo_financeiro_dre(estado)
-            self._responder_json(
-                200,
-                {
-                    "ok": True,
-                    "engine": "Python 3 + SQLite3",
-                    "state": estado,
-                    "drePython": dre,
-                },
-            )
+            self._responder_json(200, resposta_estado(carregar_estado(), self._usuario()))
             return
 
-        # 2. API: Obter Relatório DRE Calculado pelo Python
+        if rota == "/api/me":
+            user = self._usuario()
+            if not user:
+                self._negar(None)
+                return
+            self._responder_json(200, {"ok": True, "user": user})
+            return
+
         if rota == "/api/dre":
-            estado = ler_estado_completo()
-            dre = calcular_resumo_financeiro_dre(estado)
-            self._responder_json(200, {"ok": True, "dre": dre})
+            user = self._usuario()
+            if not auth.pode(user, "financeiro"):
+                self._negar(user)
+                return
+            self._responder_json(200, {"ok": True, "dre": calcular_resumo_financeiro_dre(carregar_estado())})
             return
 
-        # 3. API: Gerar Payload PIX Oficial (BRCode EMVCo + CRC16-CCITT em Python)
         if rota == "/api/pix":
-            estado = ler_estado_completo()
-            cfg = estado.get("settings", {})
-            valor_str = query.get("valor", ["0"])[0]
-            mesa_str = query.get("mesa", ["MESA01"])[0]
+            cfg = carregar_estado().get("settings", {})
             try:
-                valor_num = float(valor_str)
+                valor = float(query.get("valor", ["0"])[0])
             except ValueError:
-                valor_num = 0.0
-
-            payload_brcode = gerar_payload_pix_brcode(
-                chave_pix=cfg.get("pixKey", "pix@imperadorloungebar.com.br"),
-                nome_recebedor=cfg.get("pixMerchantName", "IMPERADOR LOUNGE BAR"),
-                cidade_recebedor=cfg.get("pixMerchantCity", "SAO PAULO"),
-                valor=valor_num,
-                txid=f"IMP{mesa_str}",
+                valor = 0.0
+            mesa = query.get("mesa", ["MESA01"])[0]
+            brcode = gerar_payload_pix_brcode(
+                chave_pix=cfg.get("pixKey", ""), nome_recebedor=cfg.get("pixMerchantName", "IMPERADOR LOUNGE BAR"),
+                cidade_recebedor=cfg.get("pixMerchantCity", "SAO PAULO"), valor=valor, txid=f"IMP{mesa}",
             )
-            self._responder_json(
-                200,
-                {
-                    "ok": True,
-                    "brcode": payload_brcode,
-                    "valor": round(valor_num, 2),
-                    "chavePix": cfg.get("pixKey"),
-                    "recebedor": cfg.get("pixMerchantName"),
-                },
-            )
+            self._responder_json(200, {"ok": True, "brcode": brcode, "valor": round(valor, 2),
+                                       "chavePix": cfg.get("pixKey"), "recebedor": cfg.get("pixMerchantName")})
             return
 
-        # 4. Servir arquivos estáticos da pasta public/
-        caminho_relativo = "/index.html" if rota in ("/", "") else rota
-        caminho_seguro = os.path.normpath(caminho_relativo.lstrip("/\\"))
-        arquivo_alvo = (PUBLIC_DIR / caminho_seguro).resolve()
-
-        if not str(arquivo_alvo).startswith(str(PUBLIC_DIR.resolve())) or not arquivo_alvo.is_file():
-            arquivo_alvo = PUBLIC_DIR / "index.html"
-
-        if not arquivo_alvo.is_file():
+        # Arquivos estáticos de public/
+        relativo = "/index.html" if rota in ("/", "") else rota
+        alvo = (PUBLIC_DIR / os.path.normpath(relativo.lstrip("/\\"))).resolve()
+        if not str(alvo).startswith(str(PUBLIC_DIR.resolve())) or not alvo.is_file():
+            alvo = PUBLIC_DIR / "index.html"
+        if not alvo.is_file():
             self.send_error(404, "Arquivo nao encontrado")
             return
-
-        tipo_mime, _ = mimetypes.guess_type(str(arquivo_alvo))
-        if not tipo_mime:
-            tipo_mime = "application/octet-stream"
-        if tipo_mime.startswith(("text/", "application/javascript", "application/json")):
-            tipo_mime += "; charset=utf-8"
-
-        conteudo = arquivo_alvo.read_bytes()
+        tipo, _ = mimetypes.guess_type(str(alvo))
+        tipo = tipo or "application/octet-stream"
+        if tipo.startswith(("text/", "application/javascript", "application/json")):
+            tipo += "; charset=utf-8"
+        conteudo = alvo.read_bytes()
         self.send_response(200)
-        self.send_header("Content-Type", tipo_mime)
+        self.send_header("Content-Type", tipo)
         self.send_header("Content-Length", str(len(conteudo)))
-        self._enviar_headers_cors()
+        if alvo.suffix in (".js", ".css", ".html"):
+            self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         self.wfile.write(conteudo)
 
+    # ---------------------------------------------------------------------- POST
     def do_POST(self) -> None:
-        url_parsed = urlparse(self.path)
-        rota = url_parsed.path
-
-        tamanho = int(self.headers.get("Content-Length", 0))
-        corpo_raw = self.rfile.read(tamanho).decode("utf-8") if tamanho > 0 else "{}"
-
+        rota = urlparse(self.path).path
+        tamanho = int(self.headers.get("Content-Length", 0) or 0)
+        if tamanho > MAX_CORPO:
+            self._responder_json(413, {"ok": False, "error": "Envio muito grande."})
+            return
+        bruto = self.rfile.read(tamanho).decode("utf-8") if tamanho > 0 else "{}"
         try:
-            payload = json.loads(corpo_raw) if corpo_raw else {}
+            payload = json.loads(bruto) if bruto else {}
         except Exception as exc:
-            self._responder_json(400, {"ok": False, "error": f"JSON invalido: {exc}"})
+            self._responder_json(400, {"ok": False, "error": f"JSON inválido: {exc}"})
+            return
+        if not isinstance(payload, dict):
+            payload = {}
+
+        # ---- Sessão --------------------------------------------------------
+        if rota == "/api/login":
+            ok, dados = auth.login(payload.get("username", ""), payload.get("password", ""), self._ip())
+            self._responder_json(200 if ok else (429 if dados.get("locked") else 401), {"ok": ok, **dados})
             return
 
-        # API: Salvar/Sincronizar Estado Completo no SQLite3
-        if rota == "/api/state":
-            novo_estado = payload.get("state")
-            if isinstance(novo_estado, dict):
-                sucesso = salvar_estado_completo(novo_estado)
-                dre = calcular_resumo_financeiro_dre(novo_estado)
-                self._responder_json(
-                    200,
-                    {
-                        "ok": sucesso,
-                        "updatedAt": datetime.now().isoformat(),
-                        "drePython": dre,
-                    },
-                )
+        if rota == "/api/logout":
+            auth.logout(self._token())
+            self._responder_json(200, {"ok": True})
+            return
+
+        user = self._usuario()
+
+        # ---- Pedidos e chamados do cardápio QR / tablet (sem login) ---------
+        if rota == "/api/public/sync":
+            with _estado_lock:
+                estado = carregar_estado()
+                qtd = erp.aplicar_sync_publico(estado, payload, user)
+                if qtd:
+                    salvar_estado_completo(estado)
+            self._responder_json(200, {"ok": True, "added": qtd})
+            return
+
+        # Daqui para baixo é preciso estar logado
+        if not user:
+            self._negar(None)
+            return
+
+        if rota == "/api/change-password":
+            ok, msg = auth.trocar_senha(user["id"], payload.get("currentPassword", ""),
+                                        payload.get("newPassword", ""), self._token())
+            self._responder_json(200 if ok else 400, {"ok": ok, "message" if ok else "error": msg,
+                                                     "user": auth.usuario_do_token(self._token())})
+            return
+
+        # ---- Ações do ERP (estoque, notas, vendas, financeiro...) -------------
+        if rota.startswith("/api/erp/"):
+            nome = rota[len("/api/erp/"):]
+            with _estado_lock:
+                estado = carregar_estado()
+                try:
+                    mensagem = erp.executar(estado, nome, payload, user)
+                except PermissionError as exc:
+                    self._responder_json(403, {"ok": False, "error": str(exc)})
+                    return
+                except erp.ErroNegocio as exc:
+                    self._responder_json(400, {"ok": False, "error": str(exc)})
+                    return
+                salvar_estado_completo(estado)
+            self._responder_json(200, {"message": mensagem, **resposta_estado(estado, user)})
+            return
+
+        # ---- Usuários e permissões ------------------------------------------
+        if rota in ("/api/users/save", "/api/users/delete"):
+            if not auth.pode(user, "usuarios", "edit"):
+                self._negar(user)
+                return
+            if rota.endswith("save"):
+                ok, msg = auth.salvar_usuario(payload, user)
             else:
-                self._responder_json(400, {"ok": False, "error": "Campo 'state' ausente"})
+                ok, msg = auth.excluir_usuario(payload.get("id", ""), user)
+            if not ok:
+                self._responder_json(400, {"ok": False, "error": msg})
+                return
+            self._responder_json(200, {"message": "Usuário salvo." if rota.endswith("save") else msg,
+                                       **resposta_estado(carregar_estado(), self._usuario())})
             return
 
-        # API: Publicar do Site direto para o Instagram (Meta Graph API / Webhook / Feed do Site)
+        # ---- Site / redes / mesas / configurações (somente as partes permitidas)
+        if rota == "/api/state":
+            novo = payload.get("state")
+            if not isinstance(novo, dict):
+                self._responder_json(400, {"ok": False, "error": "Campo 'state' ausente"})
+                return
+            with _estado_lock:
+                estado = carregar_estado()
+                aplicadas = erp.mesclar_estado_do_cliente(estado, novo, user)
+                if aplicadas:
+                    salvar_estado_completo(estado)
+            self._responder_json(200, {"ok": True, "applied": aplicadas, "updatedAt": datetime.now().isoformat()})
+            return
+
+        if rota == "/api/upload":
+            if not (auth.pode(user, "site", "edit") or auth.pode(user, "redes", "edit") or auth.pode(user, "produtos", "edit")):
+                self._negar(user)
+                return
+            m = re.match(r"^data:image/(jpeg|jpg|png|webp|gif);base64,(.+)$", str(payload.get("dataUrl") or ""), re.S)
+            if not m:
+                self._responder_json(400, {"ok": False, "error": "Imagem inválida"})
+                return
+            ext = "jpg" if m.group(1) in ("jpeg", "jpg") else m.group(1)
+            try:
+                conteudo = base64.b64decode(m.group(2), validate=False)
+            except Exception:
+                self._responder_json(400, {"ok": False, "error": "Base64 inválido"})
+                return
+            if len(conteudo) > 12 * 1024 * 1024:
+                self._responder_json(413, {"ok": False, "error": "Imagem muito grande (máx. 12MB)"})
+                return
+            UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+            nome = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}.{ext}"
+            (UPLOADS_DIR / nome).write_bytes(conteudo)
+            self._responder_json(200, {"ok": True, "url": f"/uploads/{nome}"})
+            return
+
         if rota == "/api/instagram/publish":
-            estado = ler_estado_completo()
+            if not auth.pode(user, "redes", "use"):
+                self._negar(user)
+                return
+            estado = carregar_estado()
             cfg = estado.get("settings", {})
             ig_cfg = cfg.get("instagramConfig", {})
-
-            titulo = payload.get("title", "Novidade no Imperador Lounge Bar")
-            descricao = payload.get("description", "")
-            preco = float(payload.get("price", 0.0) or 0.0)
-            badge = payload.get("badge", "Destaque Imperador")
-            image_url = payload.get("imageUrl", cfg.get("heroCoverUrl", ""))
-            post_type = payload.get("postType", "FEED")
-            caption_custom = (payload.get("caption") or "").strip()
-
-            if not caption_custom:
-                caption_custom = gerar_legenda_instagram(
-                    titulo=titulo,
-                    descricao=descricao,
-                    preco=preco,
-                    badge=badge,
-                    nome_lounge=cfg.get("brandName", "IMPERADOR LOUNGE BAR"),
-                    instagram_handle=cfg.get("instagram", "@imperadorloungebar"),
-                    endereco=cfg.get("address", ""),
-                )
-
-            resultado_ig = publicar_no_instagram_graph_api(
-                ig_user_id=payload.get("igUserId") or ig_cfg.get("igUserId", ""),
-                access_token=payload.get("accessToken") or ig_cfg.get("accessToken", ""),
-                image_url=image_url,
-                caption=caption_custom,
-                post_type=post_type,
-                webhook_url=payload.get("webhookUrl") or ig_cfg.get("webhookUrl", ""),
+            legenda = (payload.get("caption") or "").strip() or gerar_legenda_instagram(
+                titulo=payload.get("title", "Novidade"), descricao=payload.get("description", ""),
+                preco=float(payload.get("price", 0.0) or 0.0), badge=payload.get("badge", ""),
+                nome_lounge=cfg.get("brandName", "IMPERADOR LOUNGE BAR"),
+                instagram_handle=cfg.get("instagram", ""), endereco=cfg.get("address", ""),
             )
-
-            self._responder_json(
-                200,
-                {
-                    "ok": True,
-                    "caption": caption_custom,
-                    "instagramResult": resultado_ig,
-                },
+            resultado = publicar_no_instagram_graph_api(
+                ig_user_id=ig_cfg.get("igUserId", ""), access_token=ig_cfg.get("accessToken", ""),
+                image_url=_url_absoluta(payload.get("imageUrl", cfg.get("heroCoverUrl", "")), estado),
+                caption=legenda, post_type=payload.get("postType", "FEED"), webhook_url=ig_cfg.get("webhookUrl", ""),
             )
+            self._responder_json(200, {"ok": True, "caption": legenda, "instagramResult": resultado})
             return
 
-        # API: Restaurar dados iniciais do Galpão 03 / Imperador Lounge Bar
+        if rota == "/api/facebook/publish":
+            if not auth.pode(user, "redes", "use"):
+                self._negar(user)
+                return
+            estado = carregar_estado()
+            fb = (estado.get("home") or {}).get("facebookConfig", {}) or {}
+            self._responder_json(200, publicar_no_facebook_pagina(
+                page_id=fb.get("pageId", ""), page_token=fb.get("pageToken", ""),
+                image_url=_url_absoluta(payload.get("imageUrl", ""), estado), caption=payload.get("caption", ""),
+            ))
+            return
+
         if rota == "/api/reset":
-            estado_padrao = obter_dados_iniciais_galpao_imperador()
-            salvar_estado_completo(estado_padrao)
-            self._responder_json(200, {"ok": True, "state": estado_padrao})
+            if not user.get("isAdmin"):
+                self._negar(user)
+                return
+            with _estado_lock:
+                padrao = obter_dados_iniciais_imperador()
+                erp.garantir_erp(padrao)
+                salvar_estado_completo(padrao)
+            self._responder_json(200, resposta_estado(padrao, user))
             return
 
-        self._responder_json(404, {"ok": False, "error": "Endpoint nao encontrado"})
+        self._responder_json(404, {"ok": False, "error": "Endpoint não encontrado"})
 
     def log_message(self, format: str, *args) -> None:
-        # Log limpo no terminal Python
-        sys.stdout.write(f"[IMPERADOR PYTHON] {self.address_string()} - {format % args}\n")
+        sys.stdout.write(f"[IMPERADOR] {self.address_string()} - {format % args}\n")
 
 
 def iniciar_servidor() -> None:
     inicializar_banco()
+    auth.inicializar_auth()
+    carregar_estado()
     servidor = ThreadingHTTPServer(("0.0.0.0", PORT), ImperadorPythonHandler)
 
     url_local = f"http://localhost:{PORT}"
     print("=" * 74)
-    print("👑 IMPERADOR LOUNGE BAR - SISTEMA EM PYTHON + SQLITE3 INICIADO!")
+    print("IMPERADOR LOUNGE BAR - SISTEMA EM PYTHON + SQLITE3 INICIADO")
     print("=" * 74)
-    print(f"🌐 Sistema Principal:                        {url_local}")
-    print(f"📱 Cardápio Digital (Estilo Galpão 03/Tagme): {url_local}/?view=menu")
-    print(f"🖥️ Modo Tablet na Mesa (Autoatendimento PIX): {url_local}/?view=tablet")
-    print(f"💼 Painel Administrador & ERP Financeiro:     {url_local}/?view=admin")
-    print(f"🗄️ Banco de Dados SQLite3:                   data/imperador_lounge.db")
+    print(f"Site / Home:              {url_local}")
+    print(f"Cardápio Digital (QR):    {url_local}/?view=menu")
+    print(f"Tablet na mesa (PIX):     {url_local}/?view=tablet")
+    print(f"Painel administrativo:    {url_local}/?view=admin")
+    if auth.precisa_trocar_senha_padrao():
+        print(f"Primeiro acesso: usuário '{auth.USUARIO_PADRAO}' / senha '{auth.SENHA_PADRAO}' (será pedido para trocar)")
     print("=" * 74)
     print("Pressione CTRL+C para encerrar o servidor.")
 
-    # Abre automaticamente o navegador após 1 segundo
     if os.environ.get("NO_BROWSER") != "1":
         threading.Timer(1.0, lambda: webbrowser.open(url_local)).start()
-
     try:
         servidor.serve_forever()
     except KeyboardInterrupt:
-        print("\nEncerrando servidor Python Imperador Lounge Bar...")
+        print("\nEncerrando servidor...")
         servidor.server_close()
 
 
 if __name__ == "__main__":
     iniciar_servidor()
-

@@ -188,3 +188,42 @@ def publicar_no_instagram_graph_api(
         "status": "Publicado no Feed/Stories do Site + Arte & Legenda Prontas p/ Instagram",
         "publishedAt": agora,
     }
+
+
+
+def publicar_no_facebook_pagina(
+    page_id: str,
+    page_token: str,
+    image_url: str,
+    caption: str,
+) -> Dict[str, Any]:
+    """Publica foto + legenda na Página do Facebook via Meta Graph API (/{page-id}/photos)."""
+    agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    page_id = (page_id or "").strip()
+    page_token = (page_token or "").strip()
+
+    if not page_id or not page_token:
+        return {"ok": False, "status": "Facebook não configurado (ID da Página e Token)", "publishedAt": agora}
+    if not (image_url or "").startswith(("http://", "https://")) or "localhost" in image_url or "127.0.0.1" in image_url:
+        return {
+            "ok": False,
+            "status": "A foto precisa de um endereço público na internet (preencha 'URL pública do site')",
+            "publishedAt": agora,
+        }
+
+    try:
+        dados = urllib.parse.urlencode(
+            {"url": image_url, "caption": caption, "access_token": page_token}
+        ).encode("utf-8")
+        req = urllib.request.Request(
+            f"https://graph.facebook.com/v21.0/{page_id}/photos", data=dados, method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            res_json = json.loads(resp.read().decode("utf-8"))
+        post_id = res_json.get("post_id") or res_json.get("id")
+        return {"ok": True, "status": f"Publicado na Página do Facebook (ID: {post_id})", "publishedAt": agora}
+    except urllib.error.HTTPError as http_err:
+        detalhe = http_err.read().decode("utf-8", errors="ignore")
+        return {"ok": False, "status": f"Erro da API do Facebook: {detalhe[:160]}", "publishedAt": agora}
+    except Exception as exc:
+        return {"ok": False, "status": f"Erro de conexão com o Facebook: {exc}", "publishedAt": agora}

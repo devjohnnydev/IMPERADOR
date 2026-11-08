@@ -3,11 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>IMPERADOR LOUNGE BAR | Cardápio Digital (Tagme Style), Tablet PIX & ERP Completo</title>
+  <title>Imperador Lounge Bar</title>
+  <meta name="description" content="Imperador Lounge Bar — lanches, porções, tabacaria, drinks autorais e a melhor noite da cidade." />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="home.css" />
+  <link rel="stylesheet" href="admin.css" />
 </head>
 <body>
 
@@ -17,19 +20,22 @@
       <div class="crown-badge">👑</div>
       <div class="switcher-brand-text">
         <h1 id="topBrandTitle">IMPERADOR LOUNGE BAR</h1>
-        <span>Sistema Unificado: Cardápio Tagme (Galpão 03) • Tablet PIX • ERP Admin</span>
+        <span>Sistema Unificado: Cardápio Digital • Tablet PIX • ERP Admin</span>
       </div>
     </div>
 
     <nav class="mode-pills" aria-label="Alternar modo do sistema">
-      <button class="mode-pill active" id="btnModeMenu" onclick="ImperadorApp.setViewMode('menu')">
-        📱 Cardápio Digital (Tagme / QR)
+      <button class="mode-pill" id="btnModeHome" onclick="ImperadorApp.setViewMode('home')">
+        🏠 Site / Home
+      </button>
+      <button class="mode-pill" id="btnModeMenu" onclick="ImperadorApp.setViewMode('menu')">
+        📱 Cardápio Digital (QR)
       </button>
       <button class="mode-pill" id="btnModeTablet" onclick="ImperadorApp.setViewMode('tablet')">
         🖥️ Tablet Moderno (Mesa + PIX)
       </button>
       <button class="mode-pill" id="btnModeAdmin" onclick="ImperadorApp.setViewMode('admin')">
-        👑 Administrador & ERP Completo
+        🔐 Painel administrativo
       </button>
     </nav>
 
@@ -51,8 +57,11 @@
   <!-- MODAL UNIVERSAL (PERSONALIZAR ITEM / CHECKOUT PIX QR CODE / FORMULÁRIOS ADMIN) -->
   <div id="modalContainer" style="display: none;"></div>
 
+  <script src="icons.js"></script>
   <script src="data.js"></script>
+  <script src="admin.js"></script>
   <script src="app.js"></script>
+  <script src="home.js"></script>
 </body>
 </html>
 

@@ -1,5 +1,5 @@
 // ============================================================================
-// IMPERADOR LOUNGE BAR - APLICAÇÃO COMPLETA (MENU TAGME + TABLET PIX + ERP)
+// IMPERADOR LOUNGE BAR - APLICAÇÃO COMPLETA (CARDÁPIO DIGITAL + TABLET PIX + ERP)
 // ============================================================================
 
 const ImperadorApp = (() => {
@@ -7,7 +7,7 @@ const ImperadorApp = (() => {
 
   let state = JSON.parse(JSON.stringify(window.INITIAL_IMPERADOR_STATE));
   let ui = {
-    viewMode: 'menu', // 'menu' | 'tablet' | 'admin'
+    viewMode: 'home', // 'home' | 'menu' | 'tablet' | 'admin'
     selectedTable: 'Mesa 01',
     activeCategory: 'all',
     searchQuery: '',
@@ -280,12 +280,13 @@ const ImperadorApp = (() => {
       if (res.ok) {
         const data = await res.json();
         if (data && data.ok && data.state && data.state.menuItems) {
-          state = data.state;
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+          setState(data.state);
+          if (window.ImperadorAdmin) {
+            if (data.authenticated) window.ImperadorAdmin.applyServer(data);
+            else if (window.ImperadorAdmin.isLoggedIn()) window.ImperadorAdmin.sessionInvalid();
+          }
           const syncEl = document.getElementById('syncStatusIndicator');
           if (syncEl) syncEl.textContent = (data.engine || 'Python + SQLite3') + ' • Online';
-        } else {
-          await saveState(false);
         }
       }
     } catch (e) {
@@ -298,37 +299,82 @@ const ImperadorApp = (() => {
     const params = new URLSearchParams(window.location.search);
     const viewParam = params.get('view');
     const mesaParam = params.get('mesa');
-    if (viewParam && ['menu', 'tablet', 'admin'].includes(viewParam)) {
+    if (viewParam && ['home', 'menu', 'tablet', 'admin'].includes(viewParam)) {
       ui.viewMode = viewParam;
     }
     if (mesaParam) {
       ui.selectedTable = mesaParam;
+    }
+    const hashCat = window.ImperadorHome && window.ImperadorHome.categoryFromHash();
+    if (hashCat) {
+      ui.viewMode = 'category';
+      ui.pageCategory = hashCat;
     }
 
     ui.includeServiceFee = !!state.settings.enableServiceFeeByDefault;
     renderAll();
   }
 
+  // IDs de pedidos/chamados que o servidor já conhece (para enviar apenas os novos)
+  const syncedIds = new Set();
+  function markSynced() {
+    (state.orders || []).forEach(o => syncedIds.add(o.id));
+    (state.waiterCalls || []).forEach(c => syncedIds.add(c.id));
+  }
+
+  function ensureStateShape() {
+    ['orders', 'waiterCalls', 'purchases', 'employees', 'fixedExpenses', 'tables', 'categories', 'menuItems', 'socialPosts']
+      .forEach(k => { if (!Array.isArray(state[k])) state[k] = []; });
+    if (!state.settings) state.settings = {};
+    if (!state.erp) state.erp = { products: [], receipts: [], movements: [] };
+  }
+
+  function setState(newState) {
+    state = newState;
+    ensureStateShape();
+    markSynced();
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* cheio ou bloqueado */ }
+  }
+
+  function clearLocalCache() {
+    try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* ignora */ }
+  }
+
   async function saveState(reRender = true) {
+    ensureStateShape();
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch (e) {
       console.warn('Erro ao salvar no LocalStorage:', e);
     }
 
-    try {
+    // Pedidos e chamados novos (cardápio QR / tablet) - aceitos mesmo sem login
+    const newOrders = (state.orders || []).filter(o => o && o.id && !syncedIds.has(o.id));
+    const newCalls = (state.waiterCalls || []).filter(c => c && c.id && !syncedIds.has(c.id));
+    if (newOrders.length || newCalls.length) {
+      newOrders.forEach(o => syncedIds.add(o.id));
+      newCalls.forEach(c => syncedIds.add(c.id));
+      fetch('/api/public/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orders: newOrders, waiterCalls: newCalls })
+      }).catch(() => { });
+    }
+
+    // Site, redes, mesas e configurações: somente usuário logado com permissão
+    if (window.ImperadorAdmin && window.ImperadorAdmin.isLoggedIn()) {
       fetch('/api/state', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ state })
-      }).catch(() => {});
-    } catch (e) {}
+      }).catch(() => { });
+    }
 
     if (reRender) renderAll();
   }
 
   function resetDemoData() {
-    if (!confirm('Deseja restaurar todos os dados originais de demonstração do Imperador Lounge Bar (Galpão 03 Edition)?')) return;
+    if (!confirm('Deseja restaurar todos os dados originais de demonstração do Imperador Lounge Bar?')) return;
     state = JSON.parse(JSON.stringify(window.INITIAL_IMPERADOR_STATE));
     ui.cart = [];
     saveState(true);
@@ -341,6 +387,7 @@ const ImperadorApp = (() => {
   function setViewMode(mode) {
     ui.viewMode = mode;
     document.querySelectorAll('.mode-pill').forEach(btn => btn.classList.remove('active'));
+    if (mode === 'home') document.getElementById('btnModeHome')?.classList.add('active');
     if (mode === 'menu') document.getElementById('btnModeMenu')?.classList.add('active');
     if (mode === 'tablet') document.getElementById('btnModeTablet')?.classList.add('active');
     if (mode === 'admin') document.getElementById('btnModeAdmin')?.classList.add('active');
@@ -386,6 +433,7 @@ const ImperadorApp = (() => {
     }
 
     document.querySelectorAll('.mode-pill').forEach(btn => btn.classList.remove('active'));
+    if (ui.viewMode === 'home') document.getElementById('btnModeHome')?.classList.add('active');
     if (ui.viewMode === 'menu') document.getElementById('btnModeMenu')?.classList.add('active');
     if (ui.viewMode === 'tablet') document.getElementById('btnModeTablet')?.classList.add('active');
     if (ui.viewMode === 'admin') document.getElementById('btnModeAdmin')?.classList.add('active');
@@ -400,17 +448,27 @@ const ImperadorApp = (() => {
     const root = document.getElementById('appRoot');
     if (!root) return;
 
-    if (ui.viewMode === 'menu') {
-      root.innerHTML = renderTagmeDigitalMenu();
+    if (window.ImperadorHome) window.ImperadorHome.ensureHome(state);
+    const isSitePage = (ui.viewMode === 'home' || ui.viewMode === 'category') && !!window.ImperadorHome;
+    document.body.classList.toggle('home-mode', isSitePage);
+
+    if (isSitePage) {
+      root.innerHTML = ui.viewMode === 'category'
+        ? window.ImperadorHome.renderCategoryPage()
+        : window.ImperadorHome.renderHome();
+      window.ImperadorHome.afterRenderHome();
+    } else if (ui.viewMode === 'menu') {
+      root.innerHTML = renderDigitalMenu();
     } else if (ui.viewMode === 'tablet') {
       root.innerHTML = renderTabletKioskView();
     } else if (ui.viewMode === 'admin') {
-      root.innerHTML = renderAdminErpView();
+      root.innerHTML = window.ImperadorAdmin ? window.ImperadorAdmin.render() : renderAdminErpView();
     }
+    document.body.classList.toggle('admin-mode', ui.viewMode === 'admin');
   }
 
   // ==========================================================================
-  // VISÃO 1: CARDÁPIO DIGITAL ESTILO TAGME MENU (O GALPÃO 03 / IMPERADOR)
+  // VISÃO 1: CARDÁPIO DIGITAL IMPERADOR
   // ==========================================================================
   function getFilteredCategoriesAndItems() {
     const query = (ui.searchQuery || '').trim().toLowerCase();
@@ -433,31 +491,31 @@ const ImperadorApp = (() => {
       .filter(group => group.items.length > 0);
   }
 
-  function renderTagmeDigitalMenu() {
+  function renderDigitalMenu() {
     const s = state.settings;
     const groups = getFilteredCategoriesAndItems();
     const cartCount = ui.cart.reduce((sum, i) => sum + i.qty, 0);
     const cartSubtotal = ui.cart.reduce((sum, i) => sum + i.unitPrice * i.qty, 0);
 
     return `
-      <div class="tagme-shell">
-        <!-- CAPA ESTILO TAGME MENU -->
-        <div class="tagme-hero" style="background-image: url('${escapeHtml(s.heroCoverUrl)}')">
-          <div class="tagme-hero-overlay"></div>
+      <div class="imp-shell">
+        <!-- CAPA DO CARDÁPIO -->
+        <div class="imp-hero" style="background-image: url('${escapeHtml(s.heroCoverUrl)}')">
+          <div class="imp-hero-overlay"></div>
         </div>
 
         <!-- CARD DE PERFIL DO LOUNGE & TABACARIA -->
-        <section class="tagme-profile-card">
-          <div class="tagme-profile-top">
-            <div class="tagme-avatar-wrap">
-              <div class="tagme-avatar">
+        <section class="imp-profile-card">
+          <div class="imp-profile-top">
+            <div class="imp-avatar-wrap">
+              <div class="imp-avatar">
                 <span class="crown-icon">👑</span>
                 <span class="avatar-sub">IMPERADOR</span>
               </div>
-              <div class="tagme-title-block">
+              <div class="imp-title-block">
                 <h2>${escapeHtml(s.brandName)}</h2>
                 <div class="subtitle">${escapeHtml(s.brandSubtitle)}</div>
-                <div class="tagme-badges-row">
+                <div class="imp-badges-row">
                   <span class="status-badge ${s.isOpen ? 'open' : 'closed'}">
                     ● ${s.isOpen ? 'Aberto Agora' : 'Fechado'}
                   </span>
@@ -471,7 +529,7 @@ const ImperadorApp = (() => {
             </div>
 
             <!-- BOTÕES DE ATENDIMENTO RÁPIDO NA MESA (GARÇOM / CARVÃO / COMANDA) -->
-            <div class="tagme-quick-actions">
+            <div class="imp-quick-actions">
               <button class="quick-action-btn rosh-btn" onclick="ImperadorApp.triggerWaiterCall('carvao')">
                 🔥 Trocar Carvão / Rosh
               </button>
@@ -485,7 +543,7 @@ const ImperadorApp = (() => {
           </div>
 
           ${s.bannerAnnouncement ? `
-            <div class="tagme-announcement">
+            <div class="imp-announcement">
               <span>${escapeHtml(s.bannerAnnouncement)}</span>
               <button class="btn-gold" style="padding:5px 11px;font-size:0.74rem;flex-shrink:0" onclick="ImperadorApp.setViewMode('tablet')">
                 Abrir Modo Tablet PIX →
@@ -502,7 +560,7 @@ const ImperadorApp = (() => {
                 <span class="ig-gradient-badge">📸 INSTAGRAM & MURAL AO VIVO</span>
                 <span>Novidades & Promoções Postadas (${escapeHtml(s.instagram)})</span>
               </h3>
-              <a href="${escapeHtml((s.instagramConfig && s.instagramConfig.profileUrl) || 'https://www.instagram.com/ogalpao03/')}" target="_blank" rel="noopener" style="font-size:0.76rem;color:var(--gold-light);text-decoration:none;font-weight:700">
+              <a href="${escapeHtml((s.instagramConfig && s.instagramConfig.profileUrl) || 'https://www.instagram.com/imperadorloungebar/')}" target="_blank" rel="noopener" style="font-size:0.76rem;color:var(--gold-light);text-decoration:none;font-weight:700">
                 Abrir Perfil no Instagram ↗
               </a>
             </div>
@@ -520,9 +578,9 @@ const ImperadorApp = (() => {
           </section>
         ` : ''}
 
-        <!-- BARRA STICKY DE BUSCA E CATEGORIAS (TAGME MENU) -->
-        <div class="tagme-sticky-nav">
-          <div class="tagme-search-row">
+        <!-- BARRA STICKY DE BUSCA E CATEGORIAS -->
+        <div class="imp-sticky-nav">
+          <div class="imp-search-row">
             <div class="search-input-wrap">
               <span class="search-icon">🔍</span>
               <input
@@ -569,22 +627,22 @@ const ImperadorApp = (() => {
 
               <div class="menu-items-grid">
                 ${group.items.map(item => `
-                  <article class="tagme-item-card" onclick="ImperadorApp.openProductModal('${item.id}')">
-                    <div class="tagme-item-info">
+                  <article class="imp-item-card" onclick="ImperadorApp.openProductModal('${item.id}')">
+                    <div class="imp-item-info">
                       <div>
                         <div class="item-badge-row">
                           ${item.badge ? `<span class="item-tag-badge">${escapeHtml(item.badge)}</span>` : ''}
                           ${item.prepTime ? `<span class="item-prep-badge">⏱ ${escapeHtml(item.prepTime)}</span>` : ''}
                         </div>
-                        <h4 class="tagme-item-title">${escapeHtml(item.name)}</h4>
-                        <p class="tagme-item-desc">${escapeHtml(item.description)}</p>
+                        <h4 class="imp-item-title">${escapeHtml(item.name)}</h4>
+                        <p class="imp-item-desc">${escapeHtml(item.description)}</p>
                       </div>
-                      <div class="tagme-item-price-row">
+                      <div class="imp-item-price-row">
                         <span class="price-current">${formatBRL(item.price)}</span>
                         ${item.oldPrice ? `<span class="price-old">${formatBRL(item.oldPrice)}</span>` : ''}
                       </div>
                     </div>
-                    <div class="tagme-item-media">
+                    <div class="imp-item-media">
                       <img src="${escapeHtml(item.image)}" alt="${escapeHtml(item.name)}" loading="lazy" onerror="this.src='https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=400&q=80'" />
                       <button class="add-quick-btn" title="Adicionar ao pedido">+</button>
                     </div>
@@ -1039,7 +1097,7 @@ const ImperadorApp = (() => {
       id: 'PED-' + Math.floor(1000 + Math.random() * 9000),
       tableId: ui.selectedTable,
       customerName,
-      source: ui.viewMode === 'tablet' ? 'Tablet Mesa (PIX QR Code)' : 'Cardápio QR Code (Tagme)',
+      source: ui.viewMode === 'tablet' ? 'Tablet Mesa (PIX QR Code)' : 'Cardápio QR Code',
       paymentMethod,
       paymentStatus: paymentMethod === 'PIX QR Code' ? 'pago' : 'aberto',
       orderStatus: 'novo',
@@ -1234,6 +1292,9 @@ const ImperadorApp = (() => {
             </button>
 
             <div class="admin-nav-group-title">Cardápio Digital & Lounge</div>
+            <button class="admin-nav-btn ${ui.adminTab === 'site' ? 'active' : ''}" onclick="ImperadorApp.setAdminTab('site')">
+              <span class="left">🏠 Site / Home (Fotos & Textos)</span>
+            </button>
             <button class="admin-nav-btn ${ui.adminTab === 'instagram' ? 'active' : ''}" onclick="ImperadorApp.setAdminTab('instagram')">
               <span class="left">📸 Postar no Site + Instagram</span>
               <span class="nav-counter">${(state.socialPosts || []).length}</span>
@@ -1281,6 +1342,8 @@ const ImperadorApp = (() => {
         return renderAdminEmployeesTab(m);
       case 'expenses':
         return renderAdminExpensesTab(m);
+      case 'site':
+        return window.ImperadorHome ? window.ImperadorHome.renderAdminSiteTab() : '';
       case 'instagram':
         return renderAdminInstagramTab();
       case 'catalog':
@@ -1518,7 +1581,7 @@ const ImperadorApp = (() => {
       <div class="admin-page-header">
         <div>
           <h2>🧾 Tudo que Vender • Central de Pedidos, PIX & Comandas</h2>
-          <p>Gerencie os pedidos vindos do Tablet na Mesa, Cardápio QR Code (Tagme) e Balcão PDV.</p>
+          <p>Gerencie os pedidos vindos do Tablet na Mesa, Cardápio QR Code e Balcão PDV.</p>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn-outline ${ui.orderFilter === 'todos' ? 'active' : ''}" onclick="ImperadorApp.setOrderFilter('todos')">Todos (${state.orders.length})</button>
@@ -1545,8 +1608,8 @@ const ImperadorApp = (() => {
             </thead>
             <tbody>
               ${filteredOrders.map(o => {
-                const orderProfit = (Number(o.total) || 0) - (Number(o.costTotal) || 0);
-                return `
+      const orderProfit = (Number(o.total) || 0) - (Number(o.costTotal) || 0);
+      return `
                   <tr>
                     <td>
                       <strong>${escapeHtml(o.id)}</strong>
@@ -1594,7 +1657,7 @@ const ImperadorApp = (() => {
                     </td>
                   </tr>
                 `;
-              }).join('')}
+    }).join('')}
             </tbody>
           </table>
         </div>
@@ -1821,9 +1884,9 @@ const ImperadorApp = (() => {
             </thead>
             <tbody>
               ${state.menuItems.map(item => {
-                const unitProfit = (Number(item.price) || 0) - (Number(item.costPrice) || 0);
-                const isLow = (Number(item.stock) || 0) <= (Number(item.minStock) || 5);
-                return `
+      const unitProfit = (Number(item.price) || 0) - (Number(item.costPrice) || 0);
+      const isLow = (Number(item.stock) || 0) <= (Number(item.minStock) || 5);
+      return `
                   <tr>
                     <td><strong>${escapeHtml(item.name)}</strong></td>
                     <td>${formatBRL(item.costPrice)}</td>
@@ -1840,7 +1903,7 @@ const ImperadorApp = (() => {
                     </td>
                   </tr>
                 `;
-              }).join('')}
+    }).join('')}
             </tbody>
           </table>
         </div>
@@ -2003,8 +2066,8 @@ const ImperadorApp = (() => {
             </thead>
             <tbody>
               ${state.employees.map(emp => {
-                const netPay = (Number(emp.baseSalary) || 0) + (Number(emp.bonuses) || 0) - (Number(emp.advances) || 0);
-                return `
+      const netPay = (Number(emp.baseSalary) || 0) + (Number(emp.bonuses) || 0) - (Number(emp.advances) || 0);
+      return `
                   <tr>
                     <td>
                       <strong>${escapeHtml(emp.name)}</strong>
@@ -2031,7 +2094,7 @@ const ImperadorApp = (() => {
                     </td>
                   </tr>
                 `;
-              }).join('')}
+    }).join('')}
             </tbody>
           </table>
         </div>
@@ -2296,13 +2359,13 @@ const ImperadorApp = (() => {
   }
 
   // --------------------------------------------------------------------------
-  // ABA 6 DO ADMIN: GERENCIAR CARDÁPIO DIGITAL (GALPÃO 03 / IMPERADOR)
+  // ABA 6 DO ADMIN: GERENCIAR CARDÁPIO DIGITAL 
   // --------------------------------------------------------------------------
   function renderAdminCatalogTab() {
     return `
       <div class="admin-page-header">
         <div>
-          <h2>🍔 Gerenciador do Cardápio Digital (Estilo Galpão 03 / Tagme)</h2>
+          <h2>🍔 Gerenciador do Cardápio Digital</h2>
           <p>Adicione ou edite Roshs de Narguilé, Combos de Camarote, Drinks, Cervejas e Porções. Mudou aqui, atualiza na hora no QR Code e no Tablet!</p>
         </div>
         <button class="btn-gold" onclick="ImperadorApp.openCatalogItemModal()">+ Novo Produto no Cardápio</button>
@@ -2325,10 +2388,10 @@ const ImperadorApp = (() => {
             </thead>
             <tbody>
               ${state.menuItems.map(item => {
-                const cat = state.categories.find(c => c.id === item.categoryId);
-                const profit = (Number(item.price) || 0) - (Number(item.costPrice) || 0);
-                const marginPct = item.price > 0 ? (profit / item.price) * 100 : 0;
-                return `
+      const cat = state.categories.find(c => c.id === item.categoryId);
+      const profit = (Number(item.price) || 0) - (Number(item.costPrice) || 0);
+      const marginPct = item.price > 0 ? (profit / item.price) * 100 : 0;
+      return `
                   <tr>
                     <td>
                       <img src="${escapeHtml(item.image)}" alt="" style="width:52px;height:52px;border-radius:10px;object-fit:cover;border:1px solid var(--border-subtle)" />
@@ -2356,7 +2419,7 @@ const ImperadorApp = (() => {
                     </td>
                   </tr>
                 `;
-              }).join('')}
+    }).join('')}
             </tbody>
           </table>
         </div>
@@ -2395,7 +2458,7 @@ const ImperadorApp = (() => {
               </div>
             </div>
             <div class="form-group">
-              <label>Descrição Detalhada (Estilo Tagme Menu)</label>
+              <label>Descrição Detalhada</label>
               <textarea id="catItemDesc" rows="3">${existing ? escapeHtml(existing.description) : ''}</textarea>
             </div>
             <div class="form-grid">
@@ -2518,7 +2581,7 @@ const ImperadorApp = (() => {
       `📲 Peça agora no Tablet da sua mesa com PIX QR Code ou acesse nosso Cardápio Digital!`,
       `📍 ${s.address}`,
       ``,
-      `${s.instagram} #ImperadorLoungeBar #Tabacaria #Narguile #Rosh #DrinksAutorais #LoungeVIP #Galpao03Style #HappyHour`
+      `${s.instagram} #ImperadorLoungeBar #Tabacaria #Narguile #Rosh #DrinksAutorais #LoungeVIP #HappyHour`
     ].filter(Boolean).join('\n');
   }
 
@@ -2579,7 +2642,10 @@ const ImperadorApp = (() => {
     }
 
     await saveState(true);
-    showToast(`📸 Postado no Site Principal e enviado para o <strong>Instagram (${escapeHtml(state.settings.instagram)})</strong>!`, 'emerald');
+    if (!postData.silent) {
+      showToast(`📸 Postado no Site Principal e enviado para o <strong>Instagram (${escapeHtml(state.settings.instagram)})</strong>!`, 'emerald');
+    }
+    return newPost;
   }
 
   function quickPostProductToInstagram(itemId) {
@@ -2647,7 +2713,7 @@ const ImperadorApp = (() => {
 
   function renderAdminInstagramTab() {
     const igCfg = state.settings.instagramConfig || {
-      profileUrl: 'https://www.instagram.com/ogalpao03/',
+      profileUrl: 'https://www.instagram.com/imperadorloungebar/',
       autoPostNewProducts: true,
       autoPostPromotions: true,
       igUserId: '',
@@ -2662,7 +2728,7 @@ const ImperadorApp = (() => {
           <h2>📸 Central Automática: Tudo que Postar no Site ➔ Vai para o Instagram</h2>
           <p>Publique promoções, fotos da noite, combos de camarote ou novos Roshs no Site Principal e envie automaticamente para o Feed e Stories do Instagram.</p>
         </div>
-        <a href="${escapeHtml(igCfg.profileUrl || 'https://www.instagram.com/ogalpao03/')}" target="_blank" rel="noopener" class="btn-instagram" style="text-decoration:none">
+        <a href="${escapeHtml(igCfg.profileUrl || 'https://www.instagram.com/imperadorloungebar/')}" target="_blank" rel="noopener" class="btn-instagram" style="text-decoration:none">
           📸 Abrir Instagram Oficial (${escapeHtml(state.settings.instagram)}) ↗
         </a>
       </div>
@@ -2779,7 +2845,7 @@ const ImperadorApp = (() => {
         <div class="form-grid">
           <div class="form-group">
             <label>Link do Perfil do Instagram</label>
-            <input type="text" id="igCfgProfileUrl" value="${escapeHtml(igCfg.profileUrl || 'https://www.instagram.com/ogalpao03/')}" />
+            <input type="text" id="igCfgProfileUrl" value="${escapeHtml(igCfg.profileUrl || 'https://www.instagram.com/imperadorloungebar/')}" />
           </div>
           <div class="form-group">
             <label>Instagram Business Account ID (Meta Graph API)</label>
@@ -2987,11 +3053,11 @@ const ImperadorApp = (() => {
           url: window.location.origin
         });
         return;
-      } catch (e) {}
+      } catch (e) { }
     }
 
     showToast('📋 Legenda copiada! Abrindo o Instagram para você publicar...', 'emerald');
-    const igUrl = (state.settings.instagramConfig && state.settings.instagramConfig.profileUrl) || 'https://www.instagram.com/ogalpao03/';
+    const igUrl = (state.settings.instagramConfig && state.settings.instagramConfig.profileUrl) || 'https://www.instagram.com/imperadorloungebar/';
     window.open(igUrl, '_blank');
   }
 
@@ -3019,12 +3085,12 @@ const ImperadorApp = (() => {
 
       <div class="tables-qr-grid">
         ${state.tables.map(t => {
-          const tableUrl = `${baseUrl}?view=menu&mesa=${encodeURIComponent(t.id)}`;
-          const qrSvg = renderQrCodeSvg(tableUrl, 145);
-          const tableOrders = state.orders.filter(o => o.tableId === t.id);
-          const totalMesa = tableOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
+      const tableUrl = `${baseUrl}?view=menu&mesa=${encodeURIComponent(t.id)}`;
+      const qrSvg = renderQrCodeSvg(tableUrl, 145);
+      const tableOrders = state.orders.filter(o => o.tableId === t.id);
+      const totalMesa = tableOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
 
-          return `
+      return `
             <div class="table-qr-card ${t.status}">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
                 <span class="pill-badge ${t.status === 'ocupada' ? 'warning' : 'emerald'}">
@@ -3054,7 +3120,7 @@ const ImperadorApp = (() => {
               </div>
             </div>
           `;
-        }).join('')}
+    }).join('')}
       </div>
     `;
   }
@@ -3169,6 +3235,23 @@ const ImperadorApp = (() => {
   window.addEventListener('DOMContentLoaded', loadInitialState);
 
   return {
+    // Acesso interno usado pelo módulo da Home (home.js)
+    _internal: {
+      getState: () => state,
+      getUi: () => ui,
+      setState,
+      clearLocalCache,
+      renderAdminInstagramTab,
+      renderAdminTablesQrTab,
+      renderAdminSettingsTab,
+      renderAdminCatalogTab,
+      saveState,
+      showToast,
+      escapeHtml,
+      formatBRL,
+      triggerAutoInstagramPost,
+      downloadInstagramCardCanvas
+    },
     setViewMode,
     setSelectedTable,
     setCategoryFilter,

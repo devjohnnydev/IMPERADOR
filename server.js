@@ -69,6 +69,13 @@ const server = http.createServer((req, res) => {
   }
 
   // API: Salvar/Sincronizar estado completo
+  // Este servidor Node não tem login: a API fica bloqueada. Use o servidor Python (app.py).
+  if (pathname.startsWith('/api/')) {
+    res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ ok: false, error: 'Use o servidor Python (INICIAR_PYTHON.bat): ele possui login e senha.' }));
+    return;
+  }
+
   if (pathname === '/api/state' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => {
@@ -138,7 +145,7 @@ server.listen(PORT, () => {
   console.log('================================================================');
   console.log('👑 IMPERADOR LOUNGE BAR - SISTEMA COMPLETO INICIADO!');
   console.log(`🌐 Acesse no navegador: http://localhost:${PORT}`);
-  console.log(`📱 Cardápio Digital (Estilo Galpão 03 / Tagme): http://localhost:${PORT}/?view=menu`);
+  console.log(`📱 Cardápio Digital: http://localhost:${PORT}/?view=menu`);
   console.log(`🖥️ Modo Tablet Mesa (Autoatendimento + PIX):    http://localhost:${PORT}/?view=tablet`);
   console.log(`💼 Painel Administrador & ERP Financeiro:       http://localhost:${PORT}/?view=admin`);
   console.log('================================================================');

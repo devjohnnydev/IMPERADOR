@@ -1,5 +1,5 @@
 /* ==========================================================================
-   IMPERADOR LOUNGE BAR - ESTILO LUXURY DARK GOLD & TAGME DIGITAL MENU
+   IMPERADOR LOUNGE BAR - ESTILO LUXURY DARK GOLD & CARDÁPIO DIGITAL
    ========================================================================== */
 
 :root {
@@ -223,15 +223,15 @@ html, body {
 }
 
 /* ==========================================================================
-   MODO 1: CARDÁPIO DIGITAL TAGME MENU (GALPÃO 03 / IMPERADOR EDITION)
+   MODO 1: CARDÁPIO DIGITAL 
    ========================================================================== */
-.tagme-shell {
+.imp-shell {
   max-width: 960px;
   margin: 0 auto;
   padding-bottom: 110px;
 }
 
-.tagme-hero {
+.imp-hero {
   position: relative;
   height: 235px;
   background-size: cover;
@@ -240,13 +240,13 @@ html, body {
   overflow: hidden;
 }
 
-.tagme-hero-overlay {
+.imp-hero-overlay {
   position: absolute;
   inset: 0;
   background: linear-gradient(180deg, rgba(9, 10, 15, 0.35) 0%, rgba(9, 10, 15, 0.96) 100%);
 }
 
-.tagme-profile-card {
+.imp-profile-card {
   position: relative;
   margin: -65px 16px 0;
   background: var(--bg-card);
@@ -257,7 +257,7 @@ html, body {
   z-index: 2;
 }
 
-.tagme-profile-top {
+.imp-profile-top {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -265,13 +265,13 @@ html, body {
   flex-wrap: wrap;
 }
 
-.tagme-avatar-wrap {
+.imp-avatar-wrap {
   display: flex;
   align-items: center;
   gap: 15px;
 }
 
-.tagme-avatar {
+.imp-avatar {
   width: 72px;
   height: 72px;
   border-radius: 18px;
@@ -285,12 +285,12 @@ html, body {
   flex-shrink: 0;
 }
 
-.tagme-avatar .crown-icon {
+.imp-avatar .crown-icon {
   font-size: 1.75rem;
   line-height: 1;
 }
 
-.tagme-avatar .avatar-sub {
+.imp-avatar .avatar-sub {
   font-size: 0.56rem;
   font-weight: 800;
   letter-spacing: 0.12em;
@@ -298,20 +298,20 @@ html, body {
   margin-top: 3px;
 }
 
-.tagme-title-block h2 {
+.imp-title-block h2 {
   font-size: 1.35rem;
   font-weight: 800;
   color: var(--text-main);
   letter-spacing: 0.02em;
 }
 
-.tagme-title-block .subtitle {
+.imp-title-block .subtitle {
   font-size: 0.84rem;
   color: var(--gold-light);
   font-weight: 500;
 }
 
-.tagme-badges-row {
+.imp-badges-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -345,7 +345,7 @@ html, body {
   border: 1px solid var(--border-subtle);
 }
 
-.tagme-quick-actions {
+.imp-quick-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
@@ -382,7 +382,7 @@ html, body {
   color: #fff;
 }
 
-.tagme-announcement {
+.imp-announcement {
   margin-top: 14px;
   padding: 10px 14px;
   border-radius: 11px;
@@ -396,8 +396,8 @@ html, body {
   gap: 10px;
 }
 
-/* Barra de busca e navegação de categorias Tagme */
-.tagme-sticky-nav {
+/* Barra de busca e navegação de categorias */
+.imp-sticky-nav {
   position: sticky;
   top: 53px;
   z-index: 90;
@@ -407,7 +407,7 @@ html, body {
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.tagme-search-row {
+.imp-search-row {
   display: flex;
   gap: 10px;
   margin-bottom: 10px;
@@ -482,7 +482,7 @@ html, body {
   font-weight: 700;
 }
 
-/* Seções de categorias e cards de produto estilo Tagme */
+/* Seções de categorias e cards de produto */
 .menu-sections-container {
   padding: 16px;
 }
@@ -527,7 +527,7 @@ html, body {
   }
 }
 
-.tagme-item-card {
+.imp-item-card {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
@@ -541,14 +541,14 @@ html, body {
   overflow: hidden;
 }
 
-.tagme-item-card:hover {
+.imp-item-card:hover {
   background: var(--bg-card-hover);
   border-color: var(--border-gold);
   transform: translateY(-2px);
   box-shadow: var(--shadow-soft);
 }
 
-.tagme-item-info {
+.imp-item-info {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -579,14 +579,14 @@ html, body {
   color: var(--text-muted);
 }
 
-.tagme-item-title {
+.imp-item-title {
   font-size: 0.98rem;
   font-weight: 700;
   color: var(--text-main);
   margin-bottom: 5px;
 }
 
-.tagme-item-desc {
+.imp-item-desc {
   font-size: 0.8rem;
   color: var(--text-muted);
   display: -webkit-box;
@@ -596,7 +596,7 @@ html, body {
   margin-bottom: 10px;
 }
 
-.tagme-item-price-row {
+.imp-item-price-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -614,7 +614,7 @@ html, body {
   text-decoration: line-through;
 }
 
-.tagme-item-media {
+.imp-item-media {
   position: relative;
   width: 112px;
   height: 112px;
@@ -625,14 +625,14 @@ html, body {
   border: 1px solid var(--border-subtle);
 }
 
-.tagme-item-media img {
+.imp-item-media img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   transition: transform 0.3s ease;
 }
 
-.tagme-item-card:hover .tagme-item-media img {
+.imp-item-card:hover .imp-item-media img {
   transform: scale(1.06);
 }
 
@@ -1566,7 +1566,7 @@ html, body {
 }
 
 /* ==========================================================================
-   STORIES & FEED INSTAGRAM SINCRONIZADO NO SITE PRINCIPAL (ESTILO GALPÃO 03)
+   STORIES & FEED INSTAGRAM SINCRONIZADO NO SITE PRINCIPAL 
    ========================================================================== */
 .ig-stories-strip {
   margin: 16px 16px 6px;

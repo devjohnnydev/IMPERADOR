@@ -1,14 +1,14 @@
 // ============================================================================
-// DADOS INICIAIS - IMPERADOR LOUNGE BAR (Inspirado em O Galpão 03 / Tagme Menu)
+// DADOS INICIAIS - IMPERADOR LOUNGE BAR
 // ============================================================================
 
 window.INITIAL_IMPERADOR_STATE = {
   settings: {
     brandName: "IMPERADOR LOUNGE BAR",
     brandSubtitle: "Lounge • Tabacaria • Gastrobar • Drinks Autorais",
-    tagline: "A Experiência Imperial inspirada no melhor estilo Lounge & Tabacaria (Galpão 03 Edition)",
+    tagline: "A Experiência Imperial inspirada no melhor estilo Lounge & Tabacaria",
     instagram: "@imperadorloungebar",
-    referenceNote: "Layout & Cardápio Digital estilo Tagme Menu (O Galpão 03)",
+    referenceNote: "Cardápio Digital Imperador",
     address: "Av. Imperial, 300 - Centro • Lounge & Deck VIP",
     openingHours: "Terça a Domingo • 17:00 às 04:00",
     wifiSsid: "IMPERADOR_LOUNGE_5G",
@@ -25,7 +25,7 @@ window.INITIAL_IMPERADOR_STATE = {
     heroCoverUrl: "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=1400&q=80",
     adminPin: "1234",
     instagramConfig: {
-      profileUrl: "https://www.instagram.com/ogalpao03/",
+      profileUrl: "https://www.instagram.com/imperadorloungebar/",
       autoPostNewProducts: true,
       autoPostPromotions: true,
       igUserId: "",
@@ -38,7 +38,7 @@ window.INITIAL_IMPERADOR_STATE = {
     {
       id: "POST-IG-01",
       title: "🔥 SEXTA IMPERIAL: Double Sessão Rosh (Love 66 / Ziggy) + DJ Residente",
-      caption: "👑 IMPERADOR LOUNGE BAR\n\n🔥 Hoje tem Double Sessão de Narguilé com as melhores essências (Adalya Love 66, Ziggy Tropical e Zomo Swiss Alps)!\n💰 De R$ 85,00 por apenas *R$ 69,90*!\n\n📲 Peça direto no Tablet da sua mesa com PIX QR Code!\n#ImperadorLoungeBar #Tabacaria #Narguile #Galpao03Style #LoungeVIP",
+      caption: "👑 IMPERADOR LOUNGE BAR\n\n🔥 Hoje tem Double Sessão de Narguilé com as melhores essências (Adalya Love 66, Ziggy Tropical e Zomo Swiss Alps)!\n💰 De R$ 85,00 por apenas *R$ 69,90*!\n\n📲 Peça direto no Tablet da sua mesa com PIX QR Code!\n#ImperadorLoungeBar #Tabacaria #Narguile #LoungeVIP",
       imageUrl: "https://images.unsplash.com/photo-1527661591475-527312dd65f5?auto=format&fit=crop&w=800&q=80",
       price: 69.90,
       badge: "Story & Feed",
@@ -63,7 +63,7 @@ window.INITIAL_IMPERADOR_STATE = {
     },
     {
       id: "POST-IG-03",
-      title: "🥩 Tábua Imperial Galpão 03: Picanha na Chapa + Fritas Cheddar & Bacon",
+      title: "🥩 Tábua Imperial: Picanha na Chapa + Fritas Cheddar & Bacon",
       caption: "👑 GASTRONOMIA DE LOUNGE • IMPERADOR\n\n🔥 500g de Picanha Maturada na chapa fumegante + 400g de Fritas com Cheddar Cremoso e Bacon!\n💰 Apenas *R$ 119,90* (Serve 3 a 4 pessoas)\n\n#ImperadorLoungeBar #PicanhaNaChapa #Gastrobar #Porcoes",
       imageUrl: "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=800&q=80",
       price: 119.90,
@@ -101,7 +101,7 @@ window.INITIAL_IMPERADOR_STATE = {
       minStock: 15,
       unit: "sessão",
       featured: true,
-      badge: "Campeão Galpão 03",
+      badge: "Campeão da Casa",
       prepTime: "8 min",
       image: "https://images.unsplash.com/photo-1527661591475-527312dd65f5?auto=format&fit=crop&w=800&q=80",
       options: [
@@ -109,7 +109,7 @@ window.INITIAL_IMPERADOR_STATE = {
           groupName: "Sabor do 1º Rosh (Essência)",
           required: true,
           choices: [
-            { name: "Mix Galpão/Imperador (Maracujá + Menta + Melancia)", price: 0 },
+            { name: "Mix Imperador (Maracujá + Menta + Melancia)", price: 0 },
             { name: "Adalya Love 66 (Melancia, Melão, Maracujá e Menta)", price: 0 },
             { name: "Ziggy Tropical / Frutas Amarelas c/ Toque Ice", price: 0 },
             { name: "Ziggy Burley Melancia Atômica + Cane Mint", price: 0 },
@@ -159,7 +159,7 @@ window.INITIAL_IMPERADOR_STATE = {
     {
       id: "item-tabua-imperador-chapa",
       categoryId: "destaques",
-      name: "Tábua Imperial Galpão 03 (Picanha + Fritas Cheddar & Bacon)",
+      name: "Tábua Imperial (Picanha + Fritas Cheddar & Bacon)",
       description: "500g de Tiras de Picanha Maturada grelhada na chapa fumegante com cebola roxa caramelizada, acompanhada de 400g de Batata Frita crocante coberta com Cheddar cremoso, farofa de bacon, pão de alho, vinagrete, farofa temperada e maionese verde da casa.",
       price: 119.90,
       oldPrice: 139.90,
@@ -602,7 +602,7 @@ window.INITIAL_IMPERADOR_STATE = {
     {
       id: "item-batata-suprema",
       categoryId: "porcoes",
-      name: "Batata Frita Suprema Galpão 03 (Cheddar Cremoso & Bacon)",
+      name: "Batata Frita Suprema (Cheddar Cremoso & Bacon)",
       description: "500g de batatas fritas corte crinkle/palito super crocantes por fora e macias por dentro, generosamente cobertas com molho cheddar inglês derretido, cubos de bacon defumado e cebolinha fresca.",
       price: 48.90,
       costPrice: 15.20,
@@ -849,7 +849,7 @@ window.INITIAL_IMPERADOR_STATE = {
       id: "PED-9042",
       tableId: "Mesa 01",
       customerName: "Matheus Silva",
-      source: "Cardápio QR Code (Tagme)",
+      source: "Cardápio QR Code",
       paymentMethod: "PIX QR Code",
       paymentStatus: "pago",
       orderStatus: "entregue",
@@ -860,7 +860,7 @@ window.INITIAL_IMPERADOR_STATE = {
       costTotal: 102.30,
       items: [
         { itemId: "item-balde-heineken-6", name: "Balde Imperial c/ 6 Heineken Long Neck 330ml", qty: 1, price: 79.90, costPrice: 37.80, notes: "Trazer Taças Geladas" },
-        { itemId: "item-tabua-imperador-chapa", name: "Tábua Imperial Galpão 03 (Picanha + Fritas Cheddar & Bacon)", qty: 1, price: 119.90, costPrice: 46.00, notes: "Ao Ponto Suculenta" },
+        { itemId: "item-tabua-imperador-chapa", name: "Tábua Imperial (Picanha + Fritas Cheddar & Bacon)", qty: 1, price: 119.90, costPrice: 46.00, notes: "Ao Ponto Suculenta" },
         { itemId: "item-sessao-simples", name: "Sessão Narguilé Tradicional (1 Rosh Completo)", qty: 1, price: 40.00, costPrice: 18.50, notes: "Cítrico Gelado (Maracujá + Limão + Menta)" }
       ]
     },
@@ -879,7 +879,7 @@ window.INITIAL_IMPERADOR_STATE = {
       costTotal: 205.80,
       items: [
         { itemId: "item-combo-old-parr", name: "Combo Whisky Grand Old Parr 12 Anos 1L + 4 Red Bull + 4 Gelos de Coco", qty: 1, price: 369.90, costPrice: 158.00, notes: "4x Gelo de Água de Coco Original" },
-        { itemId: "item-batata-suprema", name: "Batata Frita Suprema Galpão 03 (Cheddar Cremoso & Bacon)", qty: 1, price: 48.90, costPrice: 15.20, notes: "Cheddar + Bacon" },
+        { itemId: "item-batata-suprema", name: "Batata Frita Suprema (Cheddar Cremoso & Bacon)", qty: 1, price: 48.90, costPrice: 15.20, notes: "Cheddar + Bacon" },
         { itemId: "item-coxinha-sem-massa", name: "Porção de Mini Coxinhas Cremosas Sem Massa c/ Catupiry (10 un)", qty: 1, price: 44.90, costPrice: 14.00, notes: "" },
         { itemId: "item-caipiroska-imperial", name: "Caipiroska / Caipirinha Gourmet (500ml c/ Picolé)", qty: 2, price: 29.95, costPrice: 9.30, notes: "Morango c/ Maracujá (Vodka)" }
       ]
@@ -927,7 +927,7 @@ window.INITIAL_IMPERADOR_STATE = {
       id: "PED-9046",
       tableId: "Mesa 02",
       customerName: "Amanda Souza",
-      source: "Cardápio QR Code (Tagme)",
+      source: "Cardápio QR Code",
       paymentMethod: "Aberto na Comanda",
       paymentStatus: "aberto",
       orderStatus: "novo",
@@ -1082,7 +1082,7 @@ window.INITIAL_IMPERADOR_STATE = {
   fixedExpenses: [
     {
       id: "FIX-01",
-      name: "Aluguel do Galpão / Ponto Comercial Imperador",
+      name: "Aluguel do Ponto Comercial Imperador",
       category: "Infraestrutura",
       dueDate: "Dia 10",
       amount: 3500.00,
