@@ -98,7 +98,9 @@ def estado_publico(estado: dict) -> dict:
     home = dict(estado.get("home", {}) or {})
     home.pop("facebookConfig", None)
     ocultos = ("costPrice", "minStock", "composition", "targetMarkup", "extraCost")
-    itens = [{k: v for k, v in i.items() if k not in ocultos} for i in (estado.get("menuItems") or [])]
+    copia = {"menuItems": [dict(i) for i in (estado.get("menuItems") or [])], "erp": estado.get("erp")}
+    erp.marcar_esgotados(copia)
+    itens = [{k: v for k, v in i.items() if k not in ocultos} for i in copia["menuItems"] if i.get("available") is not False]
     pedidos = []
     for o in estado.get("orders", []) or []:
         if o.get("paymentStatus") == "pago" or o.get("orderStatus") == "cancelado":
@@ -125,6 +127,10 @@ def resposta_estado(estado: dict, user) -> dict:
     if auth.pode(user, "usuarios") or auth.pode(user, "comissoes") or auth.pode(user, "vendas", "edit"):
         dados["users"] = auth.listar_usuarios()
         dados["roles"] = auth.perfis_publicos()
+    if auth.pode(user, "tv", "use"):
+        nomes = {u["name"] for u in auth.listar_usuarios() if u.get("active")}
+        nomes |= {e.get("name") for e in estado.get("employees", []) if e.get("name") and e.get("status") != "inativo"}
+        dados["staffNames"] = sorted(n for n in nomes if n)
     if auth.pode(user, "usuarios"):
         dados["sessions"] = auth.sessoes_ativas()
         dados["devicesOnline"] = erp.presenca_dispositivos()

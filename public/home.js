@@ -344,7 +344,7 @@ const ImperadorHome = (() => {
   }
 
   function itemsOf(catId) {
-    return (S().menuItems || []).filter(i => i.categoryId === catId);
+    return (S().menuItems || []).filter(i => i.categoryId === catId && i.available !== false);
   }
 
   function categoryCover(c) {
@@ -395,7 +395,7 @@ const ImperadorHome = (() => {
         </div>
         <div class="hm-items" id="hmItems">
           ${items.map((it, i) => {
-            const out = Number(it.stock) <= 0 && it.stock !== undefined && it.stock !== '';
+            const out = !!it.soldOut;
             return `
             <article class="hm-item hm-reveal ${out ? 'out' : ''}" style="--d:${(i % 3) * 70}ms"
               data-search="${esc((it.name + ' ' + (it.description || '') + ' ' + (it.badge || '')).toLowerCase())}"
@@ -469,7 +469,7 @@ const ImperadorHome = (() => {
             </div>
             <div class="hm-price-list">
               ${items.map(it => {
-                const out = Number(it.stock) <= 0 && it.stock !== undefined && it.stock !== '';
+                const out = !!it.soldOut;
                 return `
                 <div class="hm-pi ${out ? 'out' : ''}" data-search="${esc((it.name + ' ' + (it.description || '') + ' ' + (it.badge || '') + ' ' + c.name).toLowerCase())}" ${out ? '' : `onclick="ImperadorApp.openProductModal('${esc(it.id)}')"`}>
                   <div class="hm-pi-main">

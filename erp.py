@@ -109,12 +109,15 @@ def garantir_erp(estado: Dict) -> bool:
             item.setdefault("targetMarkup", 100)
         alterou = True
     erp = estado["erp"]
-    for chave in ("products", "receipts", "movements", "purchaseOrders"):
+    for chave in ("products", "receipts", "movements", "purchaseOrders", "inventories"):
         if not isinstance(erp.get(chave), list):
             erp[chave] = []
             alterou = True
     if not isinstance(erp.get("suppliers"), dict):
         erp["suppliers"] = {}
+        alterou = True
+    if not isinstance(estado.get("tv"), dict):
+        estado["tv"] = {"promos": [], "hideValues": False, "showRestock": True, "call": None}
         alterou = True
     if not isinstance(estado.get("chats"), list):
         estado["chats"] = []
@@ -474,15 +477,17 @@ def acao_preco_salvar(estado: Dict, p: Dict, user: Dict) -> str:
 # ---------------------------------------------------------------------------
 # Vendas
 # ---------------------------------------------------------------------------
-def _montar_pedido(estado: Dict, linhas_in: List[Dict], user: Optional[Dict], ref: str) -> Dict:
+def _montar_pedido(estado: Dict, linhas_in: List[Dict], user: Optional[Dict], ref: str, publico: bool = False) -> Dict:
     itens_cardapio = {i["id"]: i for i in estado.get("menuItems", []) or []}
+    if publico:
+        marcar_esgotados(estado)
     linhas, custo_total, usos, subtotal = [], 0.0, [], 0.0
     for ln in (linhas_in or [])[:60]:
         item = itens_cardapio.get(ln.get("itemId"))
         qtd = int(max(1, min(99, _num(ln.get("qty"), 1))))
-        if not item:
+        if not item or item.get("available") is False or (publico and item.get("soldOut")):
             continue
-        preco = round(_num(ln.get("price"), _num(item.get("price"))), 2)
+        preco = round(_num(item.get("price")), 2) if publico else round(_num(ln.get("price"), _num(item.get("price"))), 2)
         custo, uso = _baixar_estoque_venda(estado, item, qtd, user, ref)
         custo_total += custo
         usos += uso
@@ -566,7 +571,7 @@ def aplicar_sync_publico(estado: Dict, payload: Dict, user: Optional[Dict]) -> i
         oid = _txt(ped["id"], 40)
         vendedor = user if user and auth.pode(user, "vendas", "use") else None
         try:
-            base = _montar_pedido(estado, ped.get("items"), vendedor, oid)
+            base = _montar_pedido(estado, ped.get("items"), vendedor, oid, publico=True)
         except ErroNegocio:
             continue
         taxa = round(max(0.0, _num(ped.get("serviceFee"))), 2)
@@ -728,6 +733,166 @@ def acao_pc_excluir(estado: Dict, p: Dict, user: Dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Cardápio: disponibilidade manual e "esgotado" automático pelo estoque
+# ---------------------------------------------------------------------------
+def marcar_esgotados(estado: Dict) -> None:
+    """Marca item.soldOut quando o estoque do bar não cobre 1 unidade da ficha técnica."""
+    produtos = {p["id"]: p for p in (estado.get("erp") or {}).get("products", [])}
+    for item in estado.get("menuItems", []) or []:
+        comp = item.get("composition") or []
+        esgotado = False
+        if comp:
+            for c in comp:
+                prod = produtos.get(c.get("productId"))
+                if prod is None:
+                    continue
+                if _num((prod.get("stock") or {}).get(c.get("from", "bar"))) + 1e-9 < _num(c.get("qty")):
+                    esgotado = True
+                    break
+        elif isinstance(item.get("stock"), (int, float)):
+            esgotado = item["stock"] <= 0
+        item["soldOut"] = esgotado
+
+
+def acao_item_disponibilidade(estado: Dict, p: Dict, user: Dict) -> str:
+    item = next((i for i in estado.get("menuItems", []) if i.get("id") == p.get("menuItemId")), None)
+    if not item:
+        raise ErroNegocio("Item não encontrado.")
+    item["available"] = bool(p.get("available"))
+    return f"“{item['name']}” {'voltou para o cardápio' if item['available'] else 'saiu do cardápio (não aparece no site, tablet nem chat)'}."
+
+
+def acao_item_do_produto(estado: Dict, p: Dict, user: Dict) -> str:
+    """Cria um item de venda a partir de um produto do estoque (ex.: garrafa vendida inteira)."""
+    prod = _produto_req(estado, p.get("productId"))
+    cat = _txt(p.get("categoryId"), 40)
+    if not any(c.get("id") == cat for c in estado.get("categories", [])):
+        raise ErroNegocio("Escolha a categoria do cardápio.")
+    origem = "uso" if p.get("from") == "uso" else "bar"
+    qtd = max(0.001, _num(p.get("qty"), 1))
+    markup = max(0.0, _num(p.get("targetMarkup"), 100))
+    custo = custo_componente(prod, qtd, origem)
+    preco = _num(p.get("price")) or round(custo * (1 + markup / 100), 2)
+    item = {
+        "id": _id("item"), "categoryId": cat, "name": _txt(p.get("name"), 120) or prod["name"],
+        "description": _txt(p.get("description"), 300), "price": round(preco, 2), "costPrice": round(custo, 2),
+        "image": _txt(p.get("image"), 500), "badge": "", "available": True, "targetMarkup": markup,
+        "composition": [{"productId": prod["id"], "qty": qtd, "from": origem}],
+    }
+    estado.setdefault("menuItems", []).append(item)
+    preco_txt = f"{preco:.2f}".replace(".", ",")
+    return f"“{item['name']}” adicionado ao cardápio por R$ {preco_txt}."
+
+
+# ---------------------------------------------------------------------------
+# Inventário (contagem física x sistema)
+# ---------------------------------------------------------------------------
+def _inv_aberto(estado: Dict) -> Optional[Dict]:
+    return next((i for i in estado["erp"].get("inventories", []) if i.get("status") == "aberto"), None)
+
+
+def acao_inv_iniciar(estado: Dict, p: Dict, user: Dict) -> str:
+    if _inv_aberto(estado):
+        raise ErroNegocio("Já existe um inventário em andamento.")
+    itens = []
+    for prod in estado["erp"]["products"]:
+        if prod.get("active") is False:
+            continue
+        st = prod.get("stock") or {}
+        itens.append({"productId": prod["id"], "name": prod["name"], "category": prod.get("category", ""),
+                      "unit": prod.get("unit", "un"), "content": _num(prod.get("content"), 1), "contentUnit": prod.get("contentUnit", "un"),
+                      "avgCost": _num(prod.get("avgCost")),
+                      "system": {loc: _num(st.get(loc)) for loc in LOCAIS}, "counted": {loc: None for loc in LOCAIS}})
+    num = len(estado["erp"]["inventories"]) + 1
+    inv = {"id": _id("INV"), "number": f"INV-{num:03d}", "status": "aberto", "createdAt": _agora(),
+           "createdBy": user["id"], "createdByName": user["name"], "notes": _txt(p.get("notes"), 300), "items": itens}
+    estado["erp"]["inventories"].insert(0, inv)
+    return f"Inventário {inv['number']} iniciado. Conte os produtos e registre as quantidades."
+
+
+def acao_inv_contar(estado: Dict, p: Dict, user: Dict) -> str:
+    inv = _inv_aberto(estado)
+    if not inv or inv["id"] != p.get("id"):
+        raise ErroNegocio("Inventário não está aberto.")
+    contagens = p.get("counts") or {}
+    for it in inv["items"]:
+        c = contagens.get(it["productId"])
+        if not isinstance(c, dict):
+            continue
+        for loc in LOCAIS:
+            if loc in c:
+                v = c.get(loc)
+                it["counted"][loc] = None if v in (None, "") else max(0.0, _num(v))
+        it["countedBy"] = user["name"]
+    inv["updatedAt"] = _agora()
+    return "Contagem salva."
+
+
+def acao_inv_finalizar(estado: Dict, p: Dict, user: Dict) -> str:
+    inv = _inv_aberto(estado)
+    if not inv or inv["id"] != p.get("id"):
+        raise ErroNegocio("Inventário não está aberto.")
+    produtos = _produtos(estado)
+    ajustes, valor = 0, 0.0
+    for it in inv["items"]:
+        prod = produtos.get(it["productId"])
+        if not prod:
+            continue
+        for loc in LOCAIS:
+            contado = it["counted"].get(loc)
+            if contado is None:
+                continue
+            diff = round(contado - _num(it["system"].get(loc)), 4)
+            it.setdefault("diff", {})[loc] = diff
+            if abs(diff) < 1e-9:
+                continue
+            # aplica a diferença sobre o saldo atual (vendas feitas durante a contagem continuam valendo)
+            prod["stock"][loc] = round(_num(prod["stock"].get(loc)) + diff, 4)
+            v = custo_componente(prod, abs(diff), loc) * (1 if diff > 0 else -1)
+            valor += v
+            ajustes += 1
+            unidade = prod.get("contentUnit", "un") if loc == "uso" else prod.get("unit", "un")
+            _mov(estado, "inventario", prod, diff, unidade, "inventario" if diff > 0 else loc, loc if diff > 0 else "inventario",
+                 user, f"{inv['number']}: contado {contado:g}, sistema {_num(it['system'].get(loc)):g}", inv["id"], abs(v))
+    inv.update({"status": "finalizado", "finishedAt": _agora(), "finishedBy": user["name"],
+                "adjustments": ajustes, "valueDiff": round(valor, 2)})
+    valor_txt = f"{valor:.2f}".replace(".", ",")
+    return f"Inventário finalizado: {ajustes} ajuste(s), diferença de R$ {valor_txt}."
+
+
+def acao_inv_cancelar(estado: Dict, p: Dict, user: Dict) -> str:
+    inv = _inv_aberto(estado)
+    if not inv or inv["id"] != p.get("id"):
+        raise ErroNegocio("Inventário não está aberto.")
+    inv.update({"status": "cancelado", "finishedAt": _agora(), "finishedBy": user["name"]})
+    return "Inventário cancelado (nenhum ajuste foi feito)."
+
+
+# ---------------------------------------------------------------------------
+# Modo TV: promoções e chamadas de atendentes
+# ---------------------------------------------------------------------------
+def acao_tv_config(estado: Dict, p: Dict, user: Dict) -> str:
+    tv = estado.setdefault("tv", {})
+    if "promos" in p:
+        tv["promos"] = [{"id": _txt(x.get("id"), 30) or _id("PRM"), "text": _txt(x.get("text"), 160), "active": bool(x.get("active", True))}
+                        for x in (p.get("promos") or [])[:20] if _txt(x.get("text"), 160)]
+    for k in ("hideValues", "showRestock"):
+        if k in p:
+            tv[k] = bool(p.get(k))
+    return "Modo TV atualizado."
+
+
+def acao_tv_chamar(estado: Dict, p: Dict, user: Dict) -> str:
+    nome = _txt(p.get("name"), 60)
+    if not nome:
+        raise ErroNegocio("Informe quem deve ser chamado.")
+    local = _txt(p.get("place"), 40) or "Caixa"
+    estado.setdefault("tv", {})["call"] = {"id": _id("CALL"), "name": nome, "place": local,
+                                           "message": _txt(p.get("message"), 120), "at": _agora(), "by": user["name"]}
+    return f"{nome} chamado(a) na TV para {local}."
+
+
+# ---------------------------------------------------------------------------
 # Comissão: igual para todos ou individual por vendedor
 # ---------------------------------------------------------------------------
 def acao_comissao_config(estado: Dict, p: Dict, user: Dict) -> str:
@@ -809,7 +974,8 @@ def chat_enviar(estado: Dict, p: Dict) -> Dict:
     _msg(chat, "cliente", texto)
     chat["unreadStaff"] = int(chat.get("unreadStaff", 0)) + 1
 
-    itens_ativos = [i for i in estado.get("menuItems", []) if i.get("available", True) is not False]
+    marcar_esgotados(estado)
+    itens_ativos = [i for i in estado.get("menuItems", []) if i.get("available", True) is not False and not i.get("soldOut")]
     cats = {c["id"]: c.get("name", "") for c in estado.get("categories", [])}
     ja = []
     for o in estado.get("orders", []):
@@ -858,7 +1024,7 @@ def chat_confirmar(estado: Dict, p: Dict) -> Dict:
     desde = int(p.get("since") or 0)
     linhas = [{"itemId": i.get("itemId"), "qty": i.get("qty"), "notes": i.get("notes", "")} for i in (p.get("items") or [])[:20]]
     oid = f"PED-{secrets.randbelow(900000) + 100000}"
-    base = _montar_pedido(estado, linhas, None, oid)
+    base = _montar_pedido(estado, linhas, None, oid, publico=True)
     pct = _num((estado.get("settings") or {}).get("serviceFeePercent"), 10)
     taxa = round(base["subtotal"] * pct / 100, 2) if (estado.get("settings") or {}).get("enableServiceFeeByDefault") else 0.0
     agora = _agora()
@@ -973,6 +1139,14 @@ ACOES: Dict[str, Tuple[str, str, Callable]] = {
     "funcionario_excluir": ("financeiro", "edit", acao_funcionario_excluir),
     "comissao_config": ("comissoes", "edit", acao_comissao_config),
     "pc_salvar": ("estoque", "edit", acao_pc_salvar),
+    "item_disponibilidade": ("produtos", "use", acao_item_disponibilidade),
+    "item_do_produto": ("produtos", "edit", acao_item_do_produto),
+    "inv_iniciar": ("estoque", "edit", acao_inv_iniciar),
+    "inv_contar": ("estoque", "use", acao_inv_contar),
+    "inv_finalizar": ("estoque", "edit", acao_inv_finalizar),
+    "inv_cancelar": ("estoque", "edit", acao_inv_cancelar),
+    "tv_config": ("tv", "edit", acao_tv_config),
+    "tv_chamar": ("tv", "use", acao_tv_chamar),
     "pc_status": ("estoque", "edit", acao_pc_status),
     "pc_excluir": ("estoque", "edit", acao_pc_excluir),
     "chat_responder": ("vendas", "use", acao_chat_responder),
@@ -996,6 +1170,7 @@ def executar(estado: Dict, nome: str, payload: Dict, user: Dict) -> str:
 # ---------------------------------------------------------------------------
 def estado_para_usuario(estado: Dict, user: Dict) -> Dict:
     e = copy.deepcopy(estado)
+    marcar_esgotados(e)
     for c in e.get("chats", []) or []:
         c.pop("token", None)
     for d in (e.get("iam") or {}).get("devices", []) or []:
@@ -1029,11 +1204,15 @@ def estado_para_usuario(estado: Dict, user: Dict) -> Dict:
         erp["receipts"] = []
     if not pode("estoque"):
         erp["movements"] = []
+    if not pode("estoque"):
+        erp["inventories"] = []
+    if not pode("tv"):
+        e["tv"] = {}
     if not (pode("estoque") or pode("recebimento") or pode("aprovacoes") or pode("financeiro")):
         erp["purchaseOrders"] = []
         erp["suppliers"] = {}
 
-    if pode("vendas", "edit") or pode("comissoes") or pode("financeiro") or pode("vendas", "view") and not pode("vendas", "use"):
+    if pode("vendas", "edit") or pode("comissoes") or pode("financeiro") or pode("tv") or pode("vendas", "view") and not pode("vendas", "use"):
         pass  # vê todos os pedidos
     elif pode("vendas", "use"):
         e["orders"] = [o for o in e.get("orders", [])
@@ -1089,7 +1268,7 @@ def mesclar_estado_do_cliente(estado: Dict, cliente: Dict, user: Dict) -> List[s
                     continue
                 anterior = antigos.get(it.get("id"), {})
                 # Ficha técnica, custo e margem pertencem ao módulo Produtos & Preços
-                for chave in ("composition", "targetMarkup", "extraCost", "costPrice"):
+                for chave in ("composition", "targetMarkup", "extraCost", "costPrice", "available"):
                     if chave in anterior:
                         it[chave] = anterior[chave]
                 novos.append(it)

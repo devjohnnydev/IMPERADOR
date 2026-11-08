@@ -35,7 +35,7 @@ NIVEIS = {"none": 0, "view": 1, "use": 2, "edit": 3}
 # Módulos do sistema (a mesma lista existe no admin.js)
 MODULOS = [
     "dashboard", "recebimento", "aprovacoes", "estoque", "produtos", "vendas",
-    "comissoes", "financeiro", "site", "redes", "mesas", "config", "usuarios",
+    "comissoes", "financeiro", "site", "redes", "mesas", "config", "usuarios", "tv",
 ]
 
 
@@ -48,7 +48,7 @@ PERFIS = {
     "gerente": {"label": "Gerente", "permissions": _perm(
         dashboard="view", recebimento="edit", aprovacoes="use", estoque="edit", produtos="edit",
         vendas="edit", comissoes="view", financeiro="edit", site="edit", redes="edit", mesas="edit",
-        config="view", usuarios="view")},
+        config="view", usuarios="view", tv="edit")},
     "conferente": {"label": "Conferente (recebimento)", "permissions": _perm(
         dashboard="view", recebimento="use", estoque="view")},
     "estoquista": {"label": "Estoquista / Bar", "permissions": _perm(
@@ -58,6 +58,7 @@ PERFIS = {
     "financeiro": {"label": "Financeiro", "permissions": _perm(
         dashboard="view", recebimento="view", aprovacoes="use", estoque="view", produtos="view",
         vendas="view", comissoes="view", financeiro="edit")},
+    "tv": {"label": "TV / Monitor", "permissions": _perm(tv="view")},
 }
 
 _lock = threading.Lock()

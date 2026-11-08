@@ -609,3 +609,56 @@ body.tv-mode .ch-widget, body.tv-mode .dev-gear { display: none; }
 .adm-po-preview { white-space: pre-wrap; font-family: inherit; font-size: .88rem; line-height: 1.6; padding: 14px 16px; border-radius: 14px; background: rgba(0,0,0,.25); border: 1px solid var(--adm-border); color: var(--adm-text); max-height: 280px; overflow-y: auto; }
 .adm-send-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .adm-send-row a { text-decoration: none; }
+
+/* ---------- Modo TV: faixa de promoções e chamada de atendente ---------- */
+.tv { position: relative; }
+.tv-ticker { display: flex; align-items: center; gap: 14px; height: 52px; border-radius: 16px; overflow: hidden; background: linear-gradient(90deg, rgba(226,182,90,.22), rgba(226,182,90,.08)); border: 1px solid rgba(226,182,90,.35); }
+.tv-ticker-label { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; height: 100%; padding: 0 18px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; font-size: .85rem; color: var(--adm-accent-ink); background: linear-gradient(135deg, var(--adm-accent-2), var(--adm-accent)); }
+.tv-ticker-track { flex: 1; overflow: hidden; }
+.tv-ticker-track > div { display: flex; gap: 70px; width: max-content; animation: tvTicker 38s linear infinite; }
+.tv-ticker-track span { white-space: nowrap; font-size: 1.25rem; font-weight: 650; color: var(--adm-accent-2); }
+@keyframes tvTicker { to { transform: translateX(-50%); } }
+.tv-kpis-salon { grid-template-columns: 1fr 2fr; }
+.tv-promo-hero strong { white-space: normal; font-size: clamp(1.4rem, 2.6vw, 2.4rem); color: var(--adm-accent-2); }
+.tv-promos { list-style: none; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.tv-promos li { padding: 14px 16px; border-radius: 14px; font-size: 1.1rem; font-weight: 600; background: rgba(226,182,90,.1); border: 1px solid rgba(226,182,90,.28); }
+.tv-call { position: absolute; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(5,6,10,.82); backdrop-filter: blur(16px); animation: gmFade .3s ease; }
+.tv-call-box { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 40px 60px; border-radius: 32px; background: linear-gradient(160deg, rgba(226,182,90,.22), rgba(20,22,32,.85)); border: 2px solid rgba(226,182,90,.6); box-shadow: 0 0 120px rgba(226,182,90,.35); animation: tvCallPulse 1.6s ease-in-out infinite; }
+.tv-call-icon { color: var(--adm-accent-2); }
+.tv-call h2 { font-size: clamp(3rem, 8vw, 7rem); line-height: 1; font-weight: 800; letter-spacing: -.02em; }
+.tv-call p { font-size: clamp(1.4rem, 3vw, 2.6rem); color: var(--adm-muted); }
+.tv-call p strong { color: var(--adm-accent-2); text-transform: uppercase; }
+.tv-call small { font-size: 1.3rem; color: var(--adm-text); }
+@keyframes tvCallPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.03); } }
+
+/* ---------- Módulo Modo TV ---------- */
+.adm-muted-p { color: var(--adm-muted); font-size: .86rem; margin: -6px 0 12px; }
+.adm-chipset { display: flex; flex-wrap: wrap; gap: 6px; }
+.adm-chipset label { cursor: pointer; }
+.adm-chipset input { position: absolute; opacity: 0; pointer-events: none; }
+.adm-chipset span { display: inline-block; padding: 8px 14px; border-radius: 99px; border: 1px solid var(--adm-border); background: var(--adm-surface-2); font-size: .85rem; color: var(--adm-muted); }
+.adm-chipset input:checked + span { background: rgba(226,182,90,.16); border-color: rgba(226,182,90,.5); color: var(--adm-accent-2); font-weight: 600; }
+.adm-promo-list { list-style: none; display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.adm-promo-list li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.04); border: 1px solid var(--adm-border); }
+.adm-promo-list li span { flex: 1; font-size: .9rem; }
+.adm-promo-list li.off span { opacity: .45; text-decoration: line-through; }
+.adm-inline-add { display: flex; gap: 8px; }
+.adm-inline-add input { flex: 1; background: rgba(255,255,255,.045); border: 1px solid var(--adm-border); color: var(--adm-text); border-radius: 11px; padding: 10px 12px; font: inherit; outline: 0; }
+.adm-switch { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; cursor: pointer; }
+.adm-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.adm-switch span { position: absolute; inset: 0; border-radius: 99px; background: rgba(255,255,255,.12); transition: .2s; }
+.adm-switch span::before { content: ''; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: .2s; }
+.adm-switch input:checked + span { background: var(--adm-ok); }
+.adm-switch input:checked + span::before { transform: translateX(18px); }
+
+/* ---------- Inventário ---------- */
+.adm-inv th small { display: block; text-transform: none; letter-spacing: 0; font-size: .68rem; color: var(--adm-dim); }
+.adm-inv-cell { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.adm-inv-cell span { color: var(--adm-muted); min-width: 40px; text-align: right; }
+.adm-inv-cell input { width: 84px !important; min-width: 0 !important; margin: 0 !important; text-align: right; }
+.adm-inv-cell em { font-style: normal; color: var(--adm-dim); font-size: .74rem; min-width: 34px; text-align: left; }
+.adm-section-title .adm-toolbar-right { margin-left: auto; }
+
+.adm-tv-cta small strong { display: inline; }
+.tv-sound-unlock { position: absolute; right: 22px; bottom: 84px; z-index: 40; display: inline-flex; align-items: center; gap: 8px; padding: 12px 18px; border-radius: 14px; border: 1px solid rgba(226,182,90,.5); background: rgba(20,22,32,.92); color: var(--adm-accent-2); font: inherit; font-weight: 650; cursor: pointer; animation: tvCallPulse 2s ease-in-out infinite; }
+body.tablet-mode .ch-widget { display: none; }

@@ -479,12 +479,19 @@ const ImperadorApp = (() => {
   function getFilteredCategoriesAndItems() {
     const query = (ui.searchQuery || '').trim().toLowerCase();
     const cats = [...(state.categories || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+    // Itens cuja categoria foi apagada também aparecem (em "Outros")
+    const known = new Set(cats.map(c => c.id));
+    if ((state.menuItems || []).some(i => !known.has(i.categoryId))) {
+      cats.push({ id: '__outros', name: 'Outros', icon: '🍽️', order: 999 });
+    }
+    const catOf = (item) => known.has(item.categoryId) ? item.categoryId : '__outros';
 
     return cats
       .filter(c => ui.activeCategory === 'all' || c.id === ui.activeCategory)
       .map(cat => {
         const items = (state.menuItems || []).filter(item => {
-          if (item.categoryId !== cat.id) return false;
+          if (item.available === false) return false;
+          if (catOf(item) !== cat.id) return false;
           if (!query) return true;
           return (
             item.name.toLowerCase().includes(query) ||
@@ -633,7 +640,7 @@ const ImperadorApp = (() => {
 
               <div class="menu-items-grid">
                 ${group.items.map(item => `
-                  <article class="imp-item-card" onclick="ImperadorApp.openProductModal('${item.id}')">
+                  <article class="imp-item-card ${item.soldOut ? 'sold-out' : ''}" onclick="ImperadorApp.openProductModal('${item.id}')">${item.soldOut ? '<span class="sold-out-tag">Esgotado</span>' : ''}
                     <div class="imp-item-info">
                       <div>
                         <div class="item-badge-row">
@@ -752,7 +759,7 @@ const ImperadorApp = (() => {
 
           <div class="tablet-grid">
             ${flatItems.map(item => `
-              <article class="tablet-product-card" onclick="ImperadorApp.openProductModal('${item.id}')">
+              <article class="tablet-product-card ${item.soldOut ? 'sold-out' : ''}" onclick="ImperadorApp.openProductModal('${item.id}')">${item.soldOut ? '<span class="sold-out-tag">Esgotado</span>' : ''}
                 <div class="tablet-card-img">
                   <img src="${escapeHtml(item.image)}" alt="${escapeHtml(item.name)}" loading="lazy" onerror="this.src='https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=400&q=80'" />
                   ${item.badge ? `<span class="badge-overlay">${escapeHtml(item.badge)}</span>` : ''}
@@ -854,6 +861,10 @@ const ImperadorApp = (() => {
   function openProductModal(itemId) {
     const item = state.menuItems.find(i => i.id === itemId);
     if (!item) return;
+    if (item.available === false || item.soldOut) {
+      showToast(`<strong>${escapeHtml(item.name)}</strong> está esgotado no momento.`, 'danger');
+      return;
+    }
 
     const modal = document.getElementById('modalContainer');
     if (!modal) return;

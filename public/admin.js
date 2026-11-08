@@ -11,6 +11,7 @@ const ImperadorAdmin = (() => {
 
   const MODULES = [
     { id: 'dashboard', label: 'Painel', icon: 'chart', group: 'Visão geral', desc: 'Resumo do dia, alertas e chamados das mesas' },
+    { id: 'tv', label: 'Modo TV', icon: 'monitor', group: 'Visão geral', desc: 'Vendas ao vivo na TV, promoções e chamada de atendentes' },
     { id: 'recebimento', label: 'Recebimento', icon: 'truck', group: 'Mercadorias', desc: 'Entrada de notas e conferência das mercadorias' },
     { id: 'aprovacoes', label: 'Aprovações', icon: 'clipboard-check', group: 'Mercadorias', desc: 'Liberação das notas conferidas para o estoque' },
     { id: 'estoque', label: 'Estoque', icon: 'box', group: 'Mercadorias', desc: 'Depósito, bar (venda) e bar (uso/produção)' },
@@ -45,12 +46,12 @@ const ImperadorAdmin = (() => {
   const monthLabel = (ym) => { const [y, m] = ym.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }); };
 
   let session = loadSession();
-  let meta = { users: [], roles: {}, sessions: [], devicesOnline: {} };
+  let meta = { users: [], roles: {}, sessions: [], devicesOnline: {}, staffNames: [] };
   let view = {
     recebimento: 'pendente', aprovacoes: 'pendente', estoque: 'posicao', estoqueQ: '', estoqueCat: '',
     vendas: 'abertos', vendasPeriodo: 'hoje', vendasVendedor: '', comissoesMes: thisMonth(),
     financeiro: 'resumo', financeiroMes: thisMonth(), site: 'home', produtosQ: '', produtosCat: '',
-    iam: 'usuarios', chatSel: '', reposicaoTodos: false
+    iam: 'usuarios', chatSel: '', reposicaoTodos: false, produtosDisp: 'todos', invQ: '', invMes: thisMonth()
   };
 
   function loadSession() {
@@ -107,6 +108,7 @@ const ImperadorAdmin = (() => {
     if (data.roles) meta.roles = data.roles;
     if (Array.isArray(data.sessions)) meta.sessions = data.sessions;
     if (data.devicesOnline) meta.devicesOnline = data.devicesOnline;
+    if (Array.isArray(data.staffNames)) meta.staffNames = data.staffNames;
     if (data.state) { A().setState(data.state); lastSig = signature(data.state); }
   }
 
@@ -348,8 +350,10 @@ const ImperadorAdmin = (() => {
 
   function render() {
     if (!isLoggedIn()) return renderLogin();
-    document.body.classList.toggle('tv-mode', A().getUi().adminTab === 'tv' && can('vendas'));
-    if (A().getUi().adminTab === 'tv' && can('vendas')) return renderTv();
+    const onlyTv = can('tv') && allowedModules().length === 1;
+    const tvLive = can('tv') && (A().getUi().adminTab === 'tvlive' || onlyTv);
+    document.body.classList.toggle('tv-mode', tvLive);
+    if (tvLive) return renderTv();
     const mod = currentModule();
     if (!mod) {
       return `<div class="adm-shell"><div class="adm-empty-full">${I('lock', 40)}<h2>Sem módulos liberados</h2><p>Peça ao administrador para liberar o acesso.</p><button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.logout()">${I('logout', 16)} Sair</button></div></div>`;
@@ -392,7 +396,7 @@ const ImperadorAdmin = (() => {
                 </button>`).join('')}`).join('')}
           </nav>
           <div class="adm-side-links">
-            ${can('vendas') ? `<button class="tv-link" onclick="ImperadorApp.setAdminTab('tv')">${I('monitor', 16)} Modo TV — vendas ao vivo</button>` : ''}
+            ${can('tv') ? `<button class="tv-link" onclick="ImperadorApp.setAdminTab('tvlive')">${I('monitor', 16)} Abrir Modo TV</button>` : ''}
             <button onclick="ImperadorApp.setViewMode('home')">${I('globe', 16)} Ver site</button>
             <button onclick="ImperadorApp.setViewMode('menu')">${I('phone', 16)} Cardápio QR</button>
             <button onclick="ImperadorApp.setViewMode('tablet')">${I('tablet', 16)} Tablet da mesa</button>
@@ -424,6 +428,7 @@ const ImperadorAdmin = (() => {
   function renderModule(mod) {
     switch (mod.id) {
       case 'dashboard': return mDashboard();
+      case 'tv': return mTv();
       case 'recebimento': return mRecebimento();
       case 'aprovacoes': return mAprovacoes();
       case 'estoque': return mEstoque();
@@ -537,9 +542,9 @@ const ImperadorAdmin = (() => {
       const d = dre(thisMonth());
       kpis.push(kpi('Resultado do mês', brl(d.net), `Margem ${pct(d.revenue ? d.net / d.revenue * 100 : 0)}`, 'wallet', d.net >= 0 ? 'tone-ok' : 'tone-bad'));
     }
-    if (can('vendas')) {
+    if (can('tv')) {
       parts.push(`<div class="adm-tv-cta"><div>${I('monitor', 22)}<div><strong>Modo TV</strong><small>Vendas do dia em tempo real, por vendedor, mais vendidos e o que repor — ideal para deixar numa TV ou monitor.</small></div></div>
-        <button class="adm-btn adm-btn-primary" onclick="ImperadorApp.setAdminTab('tv')">${I('monitor', 16)} Abrir Modo TV</button></div>`);
+        <button class="adm-btn adm-btn-primary" onclick="ImperadorApp.setAdminTab('tvlive')">${I('monitor', 16)} Abrir Modo TV</button></div>`);
     }
     parts.push(`<div class="adm-kpis">${kpis.join('')}</div>`);
 
@@ -633,7 +638,13 @@ const ImperadorAdmin = (() => {
     if (fresh.length && tvSound) beep();
     const feed = orders.slice().sort((a, b) => String(b.ts).localeCompare(String(a.ts))).slice(0, 9);
 
-    const reorder = can('estoque') ? restockList().filter(r => r.need > 0).slice(0, 8) : [];
+    const tvCfg = st.tv || {};
+    const hv = !!tvCfg.hideValues;
+    const money = (v) => hv ? '' : brl(v);
+    const showRestock = can('estoque') && tvCfg.showRestock !== false && !hv;
+    const reorder = showRestock ? restockList().filter(r => r.need > 0).slice(0, 8) : [];
+    const promos = (tvCfg.promos || []).filter(p => p.active !== false && p.text);
+    const onlyTv = allowedModules().length === 1;
     const calls = (st.waiterCalls || []).filter(c => c.status === 'pendente').length;
     const chats = (st.chats || []).reduce((s, c) => s + (Number(c.unreadStaff) || 0), 0);
 
@@ -646,52 +657,166 @@ const ImperadorAdmin = (() => {
           <div class="tv-actions">
             <button title="${tvSound ? 'Som ligado' : 'Som desligado'}" onclick="ImperadorAdmin.tvToggleSound()">${I(tvSound ? 'bell' : 'x-circle', 18)}</button>
             <button title="Tela cheia" onclick="ImperadorAdmin.tvFullscreen()">${I('external', 18)}</button>
-            <button title="Sair do Modo TV" onclick="ImperadorAdmin.tvExit()">${I('x', 18)}</button>
+            <button title="${onlyTv ? 'Sair' : 'Sair do Modo TV'}" onclick="${onlyTv ? 'ImperadorAdmin.logout()' : 'ImperadorAdmin.tvExit()'}">${I(onlyTv ? 'logout' : 'x', 18)}</button>
           </div>
         </header>
 
-        <section class="tv-kpis">
+        ${hv ? `<section class="tv-kpis tv-kpis-salon">
+          <div class="tv-kpi big"><small>Pedidos hoje</small><strong>${orders.length}</strong><span>${qtyFmt(itemsQty)} itens servidos</span></div>
+          ${promos.length ? `<div class="tv-kpi tv-promo-hero"><small>${I('sparkles', 16)} Promoção</small><strong id="tvPromoHero">${esc(promos[0].text)}</strong></div>` : ''}
+        </section>` : `<section class="tv-kpis">
           <div class="tv-kpi big"><small>Vendas de hoje</small><strong>${brl(total)}</strong>
             <span class="${diff == null ? '' : diff >= 0 ? 'up' : 'down'}">${diff == null ? 'Sem vendas ontem até esta hora' : `${diff >= 0 ? '▲' : '▼'} ${pct(Math.abs(diff))} vs. ontem até ${nowHM}`}</span></div>
           <div class="tv-kpi"><small>Pedidos</small><strong>${orders.length}</strong><span>${qtyFmt(itemsQty)} itens</span></div>
           <div class="tv-kpi"><small>Ticket médio</small><strong>${brl(orders.length ? total / orders.length : 0)}</strong><span>por pedido</span></div>
           <div class="tv-kpi"><small>Recebido</small><strong>${brl(paid)}</strong><span>${brl(total - paid)} a receber</span></div>
           <div class="tv-kpi"><small>No mês</small><strong>${brl(monthTotal)}</strong><span>${calls + chats ? `${calls} chamado(s) · ${chats} msg` : 'sem chamados pendentes'}</span></div>
-        </section>
+        </section>`}
 
         <section class="tv-grid">
           <div class="tv-card tv-hours"><h3>Vendas por hora</h3>
-            <div class="tv-bars">${hList.map(x => `<div class="tv-bar ${x.h === now.getHours() ? 'now' : ''}"><span class="tv-bar-val">${x.v ? brl(x.v).replace('R$', '').trim() : ''}</span><i style="height:${Math.max(3, x.v / hMax * 100)}%"></i><b>${pad(x.h)}h</b></div>`).join('')}</div>
+            <div class="tv-bars">${hList.map(x => `<div class="tv-bar ${x.h === now.getHours() ? 'now' : ''}"><span class="tv-bar-val">${x.v && !hv ? brl(x.v).replace('R$', '').trim() : ''}</span><i style="height:${Math.max(3, x.v / hMax * 100)}%"></i><b>${pad(x.h)}h</b></div>`).join('')}</div>
           </div>
 
-          <div class="tv-card"><h3>Por vendedor</h3>
-            ${sellerList.length ? `<ul class="tv-rank">${sellerList.map((x, i) => `<li><div class="tv-rank-top"><span><em>${i + 1}</em>${esc(x.name)}</span><strong>${brl(x.total)}</strong></div>
+          <div class="tv-card"><h3>${hv ? 'Destaques da equipe' : 'Por vendedor'}</h3>
+            ${sellerList.length ? `<ul class="tv-rank">${sellerList.map((x, i) => `<li><div class="tv-rank-top"><span><em>${i + 1}</em>${esc(x.name)}</span><strong>${hv ? `${x.orders} pedido(s)` : brl(x.total)}</strong></div>
               <div class="tv-meter"><i style="width:${x.total / sMax * 100}%"></i></div><small>${x.orders} pedido(s)</small></li>`).join('')}</ul>` : `<p class="tv-empty">Aguardando o primeiro pedido do dia…</p>`}
           </div>
 
           <div class="tv-card"><h3>O que mais está saindo</h3>
             ${top.length ? `<ul class="tv-rank">${top.map((x, i) => `<li><div class="tv-rank-top"><span><em>${i + 1}</em>${esc(x.name)}</span><strong>${qtyFmt(x.qty)}×</strong></div>
-              <div class="tv-meter gold"><i style="width:${x.qty / tMax * 100}%"></i></div><small>${brl(x.total)}</small></li>`).join('')}</ul>` : `<p class="tv-empty">Nenhum item vendido ainda hoje.</p>`}
+              <div class="tv-meter gold"><i style="width:${x.qty / tMax * 100}%"></i></div><small>${money(x.total)}</small></li>`).join('')}</ul>` : `<p class="tv-empty">Nenhum item vendido ainda hoje.</p>`}
           </div>
 
           <div class="tv-card tv-feed"><h3>Últimos pedidos</h3>
             ${feed.length ? feed.map(o => `<div class="tv-order ${fresh.includes(o.id) ? 'new' : ''}">
               <time>${String(o.ts || '').slice(11, 16)}</time>
               <div><strong>${esc(o.tableId || 'Balcão')}</strong><small>${esc(o.sellerName || (o.source === 'Chat do cliente' ? 'Chat' : 'Autoatendimento'))} · ${(o.items || []).map(l => `${l.qty}× ${esc(l.name)}`).join(', ')}</small></div>
-              <strong>${brl(o.total)}</strong>${statusPill(o.paymentStatus)}</div>`).join('') : `<p class="tv-empty">Os pedidos aparecem aqui na hora.</p>`}
+              <strong>${money(o.total)}</strong>${hv ? '' : statusPill(o.paymentStatus)}</div>`).join('') : `<p class="tv-empty">Os pedidos aparecem aqui na hora.</p>`}
           </div>
 
-          ${can('estoque') ? `<div class="tv-card tv-restock"><h3>${I('alert', 18)} Precisa repor ${reorder.length ? `<span>${reorder.length}</span>` : ''}</h3>
+          ${showRestock ? `<div class="tv-card tv-restock"><h3>${I('alert', 18)} Precisa repor ${reorder.length ? `<span>${reorder.length}</span>` : ''}</h3>
             ${reorder.length ? `<ul class="tv-list">${reorder.map(r => `<li><span>${esc(r.p.name)}</span><small>tem ${qtyFmt(r.total)} · comprar <strong>${qtyFmt(r.need)} ${esc(r.p.unit)}</strong></small></li>`).join('')}</ul>
             ${can('estoque', 'edit') ? `<button class="tv-btn" onclick="ImperadorAdmin.tvToRestock()">${I('truck', 16)} Gerar pedido de compra</button>` : ''}` : `<p class="tv-empty ok">${I('check-circle', 18)} Estoque em dia.</p>`}
-          </div>` : ''}
+          </div>` : (hv && promos.length ? `<div class="tv-card tv-restock tv-promo-list"><h3>${I('sparkles', 18)} Promoções de hoje</h3>
+            <ul class="tv-promos">${promos.map(p => `<li>${esc(p.text)}</li>`).join('')}</ul></div>` : '')}
         </section>
+        ${promos.length ? `<footer class="tv-ticker"><span class="tv-ticker-label">${I('sparkles', 16)} Promoções</span>
+          <div class="tv-ticker-track"><div>${promos.concat(promos).map(p => `<span>${esc(p.text)}</span>`).join('')}</div></div></footer>` : ''}
+        ${tvCallOverlay(tvCfg.call)}
+        ${tvSound && !audioReady() ? `<button class="tv-sound-unlock" onclick="event.stopPropagation()">${I('bell', 18)} Toque aqui para ativar o som das chamadas</button>` : ''}
       </div>`;
   }
 
-  function beep() {
+  // Chamada de atendente na TV (aparece por 30 s com aviso sonoro)
+  let tvCallSeen = '';
+  function tvCallOverlay(call) {
+    if (!call || !call.at) return '';
+    const age = (Date.now() - new Date(call.at).getTime()) / 1000;
+    if (age > 30 || age < -120) return '';
+    if (tvCallSeen !== call.id) { tvCallSeen = call.id; chime(); }
+    return `<div class="tv-call"><div class="tv-call-box">
+      <span class="tv-call-icon">${I('megaphone', 46)}</span>
+      <h2>${esc(call.name)}</h2>
+      <p>por favor, compareça ${({ caixa: 'ao', 'gerência': 'à', gerencia: 'à', bar: 'ao', cozinha: 'à', tabacaria: 'à', 'recepção': 'à', recepcao: 'à', 'salão': 'ao', salao: 'ao' })[String(call.place).toLowerCase()] || 'em'} <strong>${esc(call.place)}</strong></p>
+      ${call.message ? `<small>${esc(call.message)}</small>` : ''}
+    </div></div>`;
+  }
+  function chime() {
+    if (!tvSound || !audioReady()) return;
     try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = audioCtx;
+      [[660, 0], [880, 0.22], [1100, 0.44], [660, 1.2], [880, 1.42], [1100, 1.64]].forEach(([f, t]) => {
+        const o = ctx.createOscillator(); const g = ctx.createGain();
+        o.frequency.value = f; o.type = 'triangle';
+        g.gain.setValueAtTime(0.0001, ctx.currentTime + t);
+        g.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + t + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.35);
+        o.connect(g).connect(ctx.destination); o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.4);
+      });
+    } catch (e) { /* sem áudio */ }
+  }
+
+  // ----------------------------------------------- módulo Modo TV (gerência)
+  let tvPromosDraft = null;
+  function mTv() {
+    const tv = S().tv || {};
+    const edit = can('tv', 'edit');
+    const use = can('tv', 'use');
+    tvPromosDraft = JSON.parse(JSON.stringify(tv.promos || []));
+    const call = tv.call;
+    const places = ['Caixa', 'Gerência', 'Bar', 'Cozinha', 'Tabacaria', 'Recepção', 'Salão'];
+    return `
+      <div class="adm-tv-cta"><div>${I('monitor', 22)}<div><strong>Abrir o Modo TV nesta tela</strong>
+        <small>Para uma TV ou monitor: crie um usuário com o perfil <strong>TV / Monitor</strong> em IAM e entre com ele no navegador da TV — ele abre direto no Modo TV. Você também pode liberar o Modo TV para qualquer usuário em IAM → permissões.</small></div></div>
+        <button class="adm-btn adm-btn-primary" onclick="ImperadorApp.setAdminTab('tvlive')">${I('monitor', 16)} Abrir Modo TV</button></div>
+      <div class="adm-grid-2">
+        ${use ? `<div class="adm-card"><div class="adm-card-head"><h3>${I('megaphone', 18)} Chamar alguém na TV</h3></div>
+          <p class="adm-muted-p">Aparece em tela cheia na TV por 30 segundos, com aviso sonoro.</p>
+          <div class="adm-form">
+            <label class="adm-field"><span>Quem?</span><input id="tvName" list="tvStaff" placeholder="Nome do atendente" />
+              <datalist id="tvStaff">${(meta.staffNames || []).map(n => `<option value="${esc(n)}">`).join('')}</datalist></label>
+            <div class="adm-chipset">${places.map((pl, i) => `<label><input type="radio" name="tvPlace" value="${pl}" ${i === 0 ? 'checked' : ''} /><span>${pl}</span></label>`).join('')}</div>
+            <label class="adm-field"><span>Mensagem (opcional)</span><input id="tvMsg" maxlength="120" placeholder="Ex.: troco para a mesa 5" /></label>
+            <button class="adm-btn adm-btn-primary adm-btn-block" onclick="ImperadorAdmin.tvCall()">${I('megaphone', 16)} Chamar agora</button>
+          </div>
+          ${call ? `<div class="adm-note">${I('info', 16)} <span style="flex:1">Última chamada: <strong>${esc(call.name)}</strong> → ${esc(call.place)} às ${String(call.at).slice(11, 16)} (por ${esc(call.by)}).</span>
+            <button class="adm-btn adm-btn-ghost adm-btn-sm" onclick="ImperadorAdmin.act('tv_chamar',{name:'${esc(call.name)}',place:'${esc(call.place)}',message:'${esc(call.message || '')}'},{close:false})">${I('refresh', 14)} Repetir</button></div>` : ''}
+        </div>` : ''}
+        <div class="adm-card"><div class="adm-card-head"><h3>${I('sparkles', 18)} Promoções na TV</h3></div>
+          <p class="adm-muted-p">Os textos ativos passam em faixa na parte de baixo da TV.</p>
+          <div id="tvPromos">${tvPromoRows(edit)}</div>
+          ${edit ? `<div class="adm-inline-add"><input id="tvNewPromo" maxlength="160" placeholder="Ex.: Happy hour — Balde de Heineken R$ 69,90 até 21h" onkeydown="if(event.key==='Enter'){event.preventDefault();ImperadorAdmin.tvPromoAdd()}" />
+            <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.tvPromoAdd()">${I('plus', 16)} Adicionar</button></div>
+          <div class="adm-section-title"><h4>Exibição</h4></div>
+          <label class="adm-check"><input type="checkbox" id="tvHide" ${tv.hideValues ? 'checked' : ''} /> Ocultar valores em R$ (para TV no salão, à vista dos clientes)</label>
+          <label class="adm-check"><input type="checkbox" id="tvRestock" ${tv.showRestock !== false ? 'checked' : ''} /> Mostrar “precisa repor” (quando o usuário da TV pode ver o estoque)</label>
+          <button class="adm-btn adm-btn-primary" style="margin-top:12px" onclick="ImperadorAdmin.tvSaveConfig()">${I('save', 16)} Salvar promoções e exibição</button>` : ''}
+        </div>
+      </div>`;
+  }
+  function tvPromoRows(edit) {
+    if (!tvPromosDraft.length) return `<div class="adm-empty sm">${I('sparkles', 24)}<p>Nenhuma promoção cadastrada.</p></div>`;
+    return `<ul class="adm-promo-list">${tvPromosDraft.map((p, i) => `<li class="${p.active === false ? 'off' : ''}">
+      ${edit ? `<label class="adm-switch"><input type="checkbox" ${p.active !== false ? 'checked' : ''} onchange="ImperadorAdmin.tvPromoToggle(${i}, this.checked)" /><span></span></label>` : ''}
+      <span>${esc(p.text)}</span>
+      ${edit ? `<button class="adm-icon-btn danger" onclick="ImperadorAdmin.tvPromoDel(${i})">${I('trash', 15)}</button>` : ''}</li>`).join('')}</ul>`;
+  }
+  function tvPromoAdd() {
+    const el = document.getElementById('tvNewPromo');
+    const text = (el.value || '').trim();
+    if (!text) return;
+    tvPromosDraft.push({ text, active: true });
+    el.value = '';
+    document.getElementById('tvPromos').innerHTML = tvPromoRows(true);
+  }
+  function tvPromoToggle(i, on) { tvPromosDraft[i].active = on; document.getElementById('tvPromos').innerHTML = tvPromoRows(true); }
+  function tvPromoDel(i) { tvPromosDraft.splice(i, 1); document.getElementById('tvPromos').innerHTML = tvPromoRows(true); }
+  function tvSaveConfig() {
+    act('tv_config', { promos: tvPromosDraft, hideValues: checked('tvHide'), showRestock: checked('tvRestock') }, { close: false });
+  }
+  function tvCall() {
+    const name = val('tvName').trim();
+    const place = (document.querySelector('input[name=tvPlace]:checked') || {}).value || 'Caixa';
+    if (!name) { A().showToast('Informe quem deve ser chamado.', 'danger'); return; }
+    act('tv_chamar', { name, place, message: val('tvMsg') }, { close: false });
+  }
+
+  let audioCtx = null;
+  function audio() {
+    try { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { /* sem áudio */ }
+    return audioCtx;
+  }
+  const audioReady = () => !!(audioCtx && audioCtx.state === 'running');
+  document.addEventListener('pointerdown', () => {
+    const c = audio();
+    if (c && c.state !== 'running') c.resume().then(() => { if (document.body.classList.contains('tv-mode')) rerender(); }).catch(() => {});
+  }, true);
+
+  function beep() {
+    if (!audioReady()) return;
+    try {
+      const ctx = audioCtx;
       [0, 0.16].forEach((t, i) => {
         const o = ctx.createOscillator(); const g = ctx.createGain();
         o.frequency.value = i ? 1320 : 880; o.type = 'sine';
@@ -712,11 +837,11 @@ const ImperadorAdmin = (() => {
     tvSeen = null;
     ImperadorApp.setAdminTab('dashboard');
   }
-  function tvToRestock() { view.estoque = 'reposicao'; tvExit(); ImperadorApp.setAdminTab('estoque'); }
+  function tvToRestock() { view.estoque = 'reposicao'; if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); ImperadorApp.setAdminTab('estoque'); }
 
   // Atualização rápida enquanto o Modo TV está aberto
   setInterval(async () => {
-    if (!isLoggedIn() || A().getUi().viewMode !== 'admin' || A().getUi().adminTab !== 'tv' || document.hidden) return;
+    if (!isLoggedIn() || A().getUi().viewMode !== 'admin' || !document.body.classList.contains('tv-mode') || document.hidden) return;
     try {
       const res = await fetch('/api/state');
       const data = await res.json();
@@ -1012,9 +1137,12 @@ const ImperadorAdmin = (() => {
         ${kpi('No bar (uso)', brl(sumLoc('uso')), 'Abertos para drinks e porções', 'cocktail')}
         ${kpi('Abaixo do mínimo', low, '', 'alert', low ? 'tone-bad' : 'tone-ok')}
       </div>`;
+    const soldIds = new Set((S().menuItems || []).filter(i => i.available !== false).flatMap(i => (i.composition || []).map(c => c.productId)));
     const needCount = restockList().filter(r => r.need > 0).length;
     const openPOs = pos().filter(x => x.status === 'rascunho' || x.status === 'enviado').length;
-    const estTabs = [['posicao', 'Posição do estoque'], ['reposicao', 'Reposição', needCount], ['compras', 'Pedidos de compra', openPOs], ['movimentos', 'Movimentações']];
+    const invOpen = ((S().erp || {}).inventories || []).some(x => x.status === 'aberto');
+    const estTabs = [['posicao', 'Posição do estoque'], ['reposicao', 'Reposição', needCount], ['compras', 'Pedidos de compra', openPOs], ['inventario', invOpen ? 'Inventário (em andamento)' : 'Inventário'], ['movimentos', 'Movimentações']];
+    if (view.estoque === 'inventario') return head + tabs('estoque', estTabs) + inventoryView();
     if (view.estoque === 'movimentos') return head + tabs('estoque', estTabs) + movementsTable();
     if (view.estoque === 'reposicao') return head + tabs('estoque', estTabs) + restockTable();
     if (view.estoque === 'compras') return head + tabs('estoque', estTabs) + poTable();
@@ -1034,7 +1162,7 @@ const ImperadorAdmin = (() => {
           const tot = totalUnits(p);
           const isLow = tot <= (Number(p.minStock) || 0);
           return `<tr class="${p.active === false ? 'row-off' : ''}">
-            <td><strong>${esc(p.name)}</strong><small>${esc(p.category || '')} · ${esc(p.unit)}${Number(p.content) > 1 ? ` de ${qtyFmt(p.content)} ${esc(p.contentUnit)}` : ''}</small></td>
+            <td><strong>${esc(p.name)}</strong>${soldIds.has(p.id) ? ' <span class="adm-pill info" title="Usado em itens do cardápio">No cardápio</span>' : ' <span class="adm-pill" title="Nenhum item do cardápio usa este produto">Fora do cardápio</span>'}<small>${esc(p.category || '')} · ${esc(p.unit)}${Number(p.content) > 1 ? ` de ${qtyFmt(p.content)} ${esc(p.contentUnit)}` : ''}</small></td>
             <td class="r">${qtyFmt(st.deposito)}</td>
             <td class="r">${qtyFmt(st.bar)}</td>
             <td class="r">${usoLabel(p)}</td>
@@ -1043,6 +1171,7 @@ const ImperadorAdmin = (() => {
             <td class="r">${brl(tot * (Number(p.avgCost) || 0))}</td>
             <td class="r nowrap">
               ${can('estoque', 'use') ? `<button class="adm-btn adm-btn-ghost adm-btn-sm" onclick="ImperadorAdmin.openTransfer('${esc(p.id)}')">${I('transfer', 15)} Transferir</button>` : ''}
+              ${can('produtos', 'edit') && !soldIds.has(p.id) ? `<button class="adm-icon-btn" title="Vender no cardápio" onclick="ImperadorAdmin.openSellItem('${esc(p.id)}')">${I('tag', 16)}</button>` : ''}
               ${can('estoque', 'edit') ? `<button class="adm-icon-btn" title="Ajuste / inventário" onclick="ImperadorAdmin.openAdjust('${esc(p.id)}')">${I('layers', 16)}</button>
               <button class="adm-icon-btn" title="Editar produto" onclick="ImperadorAdmin.openProduct('${esc(p.id)}')">${I('edit', 16)}</button>` : ''}
             </td></tr>`;
@@ -1285,10 +1414,200 @@ const ImperadorAdmin = (() => {
     w.document.close();
   }
 
+  function openSellItem(pid) {
+    const p = products().find(x => x.id === pid);
+    if (!p) return;
+    const cats = S().categories || [];
+    const dose = Number(p.content) > 1;
+    openModal({
+      title: 'Vender no cardápio', subtitle: `${esc(p.name)} — cria um item de venda ligado a este produto`, icon: 'tag', size: 'md',
+      body: `<div class="adm-form">
+        <label class="adm-field"><span>Nome no cardápio</span><input id="siName" value="${esc(p.name)}" /></label>
+        <label class="adm-field"><span>Categoria</span><select id="siCat">${cats.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select></label>
+        <div class="adm-form-grid g2">
+          <label class="adm-field"><span>Vende</span><select id="siFrom" onchange="ImperadorAdmin.siPreview('${esc(p.id)}')">
+            <option value="bar">Unidade inteira (${esc(p.unit)})</option>${dose ? `<option value="uso">Dose em ${esc(p.contentUnit)}</option>` : ''}</select></label>
+          <label class="adm-field"><span>Quantidade por venda</span><input id="siQty" type="number" min="0" step="any" value="1" oninput="ImperadorAdmin.siPreview('${esc(p.id)}')" /></label>
+          <label class="adm-field"><span>Lucro desejado s/ custo (%)</span><input id="siMk" type="number" min="0" value="100" oninput="ImperadorAdmin.siPreview('${esc(p.id)}')" /></label>
+          <label class="adm-field"><span>Preço de venda (R$)</span><input id="siPrice" type="number" min="0" step="0.01" /></label>
+        </div>
+        <div class="adm-note" id="siPrev"></div>
+      </div>`,
+      footer: `<button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.closeModal()">Cancelar</button>
+        <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.act('item_do_produto',{productId:'${esc(p.id)}',name:document.getElementById('siName').value,categoryId:document.getElementById('siCat').value,from:document.getElementById('siFrom').value,qty:document.getElementById('siQty').value,targetMarkup:document.getElementById('siMk').value,price:document.getElementById('siPrice').value})">${I('plus', 16)} Colocar no cardápio</button>`
+    });
+    siPreview(pid);
+  }
+  function siPreview(pid) {
+    const p = products().find(x => x.id === pid);
+    const from = val('siFrom'); const q = Number(val('siQty')) || 0; const mk = Number(val('siMk')) || 0;
+    const cost = compCost(p, q, from);
+    const sug = Math.round(cost * (1 + mk / 100) * 100) / 100;
+    const priceEl = document.getElementById('siPrice');
+    if (priceEl) priceEl.value = sug.toFixed(2);
+    const el = document.getElementById('siPrev');
+    if (el) el.innerHTML = `${I('info', 16)} Custo por venda <strong>${brl(cost)}</strong> · preço sugerido <strong>${brl(sug)}</strong>. Ex.: garrafa comprada a R$ 100 com 100% de lucro = R$ 200.`;
+  }
+
+  // ------------------------------------------------------------- Inventário
+  const LOCS = [['deposito', 'Depósito'], ['bar', 'Bar (venda)'], ['uso', 'Bar (uso)']];
+  function inventoryView() {
+    const invs = (S().erp || {}).inventories || [];
+    const open = invs.find(x => x.status === 'aberto');
+    if (open) return inventoryCount(open);
+    const edit = can('estoque', 'edit');
+    return `
+      <div class="adm-tv-cta"><div>${I('clipboard-check', 22)}<div><strong>Inventário (contagem física)</strong>
+        <small>Ao iniciar, o sistema registra o saldo de cada produto. A equipe conta o depósito, o bar e o que está aberto para uso; ao finalizar, as diferenças viram ajustes no estoque com o valor apurado.</small></div></div>
+        ${edit ? `<button class="adm-btn adm-btn-primary" onclick="if(confirm('Iniciar um novo inventário agora?')) ImperadorAdmin.act('inv_iniciar',{},{close:false})">${I('plus', 16)} Iniciar inventário</button>` : ''}</div>
+      ${generalReport()}
+      <div class="adm-section-title"><h4>Inventários anteriores</h4></div>
+      <div class="adm-card adm-card-flush">${invs.length ? `<div class="adm-table-wrap"><table class="adm-table">
+        <thead><tr><th>Inventário</th><th>Início</th><th>Finalizado</th><th class="r">Ajustes</th><th class="r">Diferença</th><th>Situação</th><th></th></tr></thead>
+        <tbody>${invs.map(x => `<tr><td><strong>${esc(x.number)}</strong><small>${esc(x.createdByName)}</small></td><td>${fmtDate(x.createdAt)}</td><td>${fmtDate(x.finishedAt)}<small>${esc(x.finishedBy || '')}</small></td>
+          <td class="r">${x.adjustments || 0}</td><td class="r ${Number(x.valueDiff) < 0 ? 'bad' : 'ok'}">${brl(x.valueDiff)}</td>
+          <td>${x.status === 'finalizado' ? '<span class="adm-pill ok">Finalizado</span>' : '<span class="adm-pill bad">Cancelado</span>'}</td>
+          <td class="r"><button class="adm-icon-btn" title="Exportar planilha" onclick="ImperadorAdmin.invCsv('${esc(x.id)}')">${I('download', 16)}</button></td></tr>`).join('')}</tbody></table></div>`
+        : empty('clipboard-check', 'Nenhum inventário feito ainda')}</div>`;
+  }
+
+  let invDraft = {};
+  function inventoryCount(inv) {
+    const edit = can('estoque', 'edit');
+    const q = (view.invQ || '').toLowerCase();
+    const items = inv.items.filter(it => !q || it.name.toLowerCase().includes(q) || (it.category || '').toLowerCase().includes(q));
+    const counted = inv.items.filter(it => LOCS.some(([l]) => it.counted[l] != null)).length;
+    let diffValue = 0;
+    inv.items.forEach(it => LOCS.forEach(([l]) => {
+      const c = it.counted[l];
+      if (c == null) return;
+      const d = c - (Number(it.system[l]) || 0);
+      diffValue += l === 'uso' ? d * it.avgCost / (it.content || 1) : d * it.avgCost;
+    }));
+    return `
+      <div class="adm-kpis">
+        ${kpi('Inventário', esc(inv.number), `iniciado ${fmtDate(inv.createdAt)} por ${esc(inv.createdByName)}`, 'clipboard-check')}
+        ${kpi('Produtos contados', `${counted} / ${inv.items.length}`, 'deixe em branco o que não foi contado', 'check')}
+        ${kpi('Diferença apurada', brl(diffValue), 'sobra (+) ou falta (−) a custo médio', 'wallet', diffValue < 0 ? 'tone-bad' : 'tone-ok')}
+      </div>
+      <div class="adm-toolbar">
+        <div class="adm-search">${I('search', 16)}<input placeholder="Filtrar produto ou categoria" value="${esc(view.invQ || '')}" onchange="ImperadorAdmin.setView('invQ', this.value)" /></div>
+        <div class="adm-toolbar-right">
+          <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.invPrint('${esc(inv.id)}')">${I('printer', 16)} Folha de contagem</button>
+          <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.invCsv('${esc(inv.id)}')">${I('download', 16)} Planilha</button>
+          <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.invSave('${esc(inv.id)}')">${I('save', 16)} Salvar contagem</button>
+        </div>
+      </div>
+      <div class="adm-card adm-card-flush"><div class="adm-table-wrap"><table class="adm-table adm-table-edit adm-inv">
+        <thead><tr><th>Produto</th>${LOCS.map(([, n]) => `<th class="r">${n}<small>sistema → contado</small></th>`).join('')}<th class="r">Diferença</th></tr></thead>
+        <tbody>${items.map(it => {
+          let dv = 0;
+          const cells = LOCS.map(([l]) => {
+            const sys = Number(it.system[l]) || 0;
+            const draftV = (invDraft[it.productId] || {})[l];
+            const c = draftV !== undefined ? draftV : it.counted[l];
+            if (c != null && c !== '') dv += (l === 'uso' ? (Number(c) - sys) * it.avgCost / (it.content || 1) : (Number(c) - sys) * it.avgCost);
+            const unit = l === 'uso' ? it.contentUnit : it.unit;
+            return `<td class="r"><div class="adm-inv-cell"><span>${qtyFmt(sys)}</span>${I('arrow-right', 12)}<input type="number" min="0" step="any" value="${c == null ? '' : esc(c)}" placeholder="—" oninput="ImperadorAdmin.invSet('${esc(it.productId)}','${l}',this.value)" /><em>${esc(unit)}</em></div></td>`;
+          }).join('');
+          return `<tr><td><strong>${esc(it.name)}</strong><small>${esc(it.category || '')}</small></td>${cells}<td class="r ${dv < 0 ? 'bad' : dv > 0 ? 'ok' : ''}" id="invDiff_${esc(it.productId)}">${dv ? brl(dv) : '—'}</td></tr>`;
+        }).join('')}</tbody></table></div></div>
+      <div class="adm-toolbar">
+        ${edit ? `<button class="adm-btn adm-btn-danger-ghost" onclick="if(confirm('Cancelar o inventário? Nada será ajustado.')) ImperadorAdmin.act('inv_cancelar',{id:'${esc(inv.id)}'},{close:false})">${I('x-circle', 16)} Cancelar inventário</button>` : '<span></span>'}
+        ${edit ? `<button class="adm-btn adm-btn-ok" onclick="ImperadorAdmin.invFinish('${esc(inv.id)}')">${I('check-circle', 16)} Finalizar e ajustar o estoque</button>` : ''}
+      </div>`;
+  }
+  function invSet(pid, loc, v) { invDraft[pid] = invDraft[pid] || {}; invDraft[pid][loc] = v === '' ? null : Number(v); }
+  async function invSave(id) {
+    const counts = invDraft; invDraft = {};
+    await act('inv_contar', { id, counts }, { close: false });
+  }
+  async function invFinish(id) {
+    if (Object.keys(invDraft).length) { const counts = invDraft; invDraft = {}; const r = await act('inv_contar', { id, counts }, { close: false, silent: true }); if (!r) return; }
+    if (!confirm('Finalizar o inventário? As diferenças serão lançadas no estoque.')) return;
+    act('inv_finalizar', { id }, { close: false });
+  }
+  function download(name, text, type = 'text/csv;charset=utf-8') {
+    const blob = new Blob(['\ufeff' + text], { type });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+  }
+  const csvCell = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+  const csvNum = (v) => (v == null || v === '') ? '' : String(Math.round(Number(v) * 1000) / 1000).replace('.', ',');
+  function invCsv(id) {
+    const inv = ((S().erp || {}).inventories || []).find(x => x.id === id);
+    if (!inv) return;
+    const head = ['Produto', 'Categoria', 'Unidade', ...LOCS.flatMap(([, n]) => [`${n} sistema`, `${n} contado`]), 'Custo médio'];
+    const rows = inv.items.map(it => [it.name, it.category, it.unit, ...LOCS.flatMap(([l]) => [csvNum(it.system[l]), csvNum(it.counted[l])]), csvNum(it.avgCost)]);
+    download(`${inv.number}.csv`, [head, ...rows].map(r => r.map(csvCell).join(';')).join('\n'));
+  }
+  function invPrint(id) {
+    const inv = ((S().erp || {}).inventories || []).find(x => x.id === id);
+    const w = window.open('', '_blank');
+    if (!w || !inv) return;
+    const byCat = {};
+    inv.items.forEach(it => { (byCat[it.category || 'Outros'] = byCat[it.category || 'Outros'] || []).push(it); });
+    w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(inv.number)}</title><style>
+      body{font-family:Arial,sans-serif;margin:28px;color:#111}h1{font-size:20px;margin:0 0 4px}h2{font-size:14px;margin:18px 0 6px;border-bottom:2px solid #111}
+      table{width:100%;border-collapse:collapse}td,th{border:1px solid #bbb;padding:6px;font-size:12px}th{background:#eee}td.box{width:90px}</style></head><body>
+      <h1>Folha de contagem — ${esc(inv.number)}</h1><small>${esc((S().settings || {}).brandName || '')} · iniciado em ${fmtDate(inv.createdAt)} · contado por: ____________________</small>
+      ${Object.entries(byCat).map(([c, its]) => `<h2>${esc(c)}</h2><table><tr><th>Produto</th><th>Depósito</th><th>Bar (venda)</th><th>Bar (uso)</th></tr>
+        ${its.map(it => `<tr><td>${esc(it.name)} <small>(${esc(it.unit)})</small></td><td class="box"></td><td class="box"></td><td class="box">${it.content > 1 ? esc(it.contentUnit) : ''}</td></tr>`).join('')}</table>`).join('')}
+      <script>window.onload=()=>window.print()<\/script></body></html>`);
+    w.document.close();
+  }
+
+  // Relatório geral: comprado x vendido x perdas x estoque atual (por mês)
+  function generalReport() {
+    const month = view.invMes || thisMonth();
+    const movs = ((S().erp || {}).movements || []).filter(m => String(m.at).slice(0, 7) === month);
+    const pm = productMap();
+    const rows = {};
+    const units = (m) => { const p = pm[m.productId]; return m.unit === (p && p.contentUnit) && p && Number(p.content) > 1 && m.unit !== p.unit ? Math.abs(Number(m.qty)) / (Number(p.content) || 1) : Math.abs(Number(m.qty)); };
+    movs.forEach(m => {
+      const r = rows[m.productId] = rows[m.productId] || { name: m.productName, comprado: 0, compradoV: 0, vendido: 0, vendidoV: 0, perdas: 0, perdasV: 0, ajustes: 0 };
+      const u = units(m);
+      if (m.type === 'entrada') { r.comprado += u; r.compradoV += Number(m.cost) || 0; }
+      else if (m.type === 'venda') { r.vendido += u; r.vendidoV += Number(m.cost) || 0; }
+      else if (m.type === 'estorno') { r.vendido -= u; r.vendidoV -= Number(m.cost) || 0; }
+      else if (m.type === 'perda') { r.perdas += u; r.perdasV += Number(m.cost) || 0; }
+      else if (m.type === 'ajuste' || m.type === 'inventario') r.ajustes += Number(m.qty) < 0 ? -u : u;
+    });
+    products().forEach(p => { if (!rows[p.id]) rows[p.id] = { name: p.name, comprado: 0, compradoV: 0, vendido: 0, vendidoV: 0, perdas: 0, perdasV: 0, ajustes: 0 }; });
+    const list = Object.entries(rows).map(([id, r]) => Object.assign(r, { id, p: pm[id], atual: pm[id] ? totalUnits(pm[id]) : 0 })).sort((a, b) => a.name.localeCompare(b.name));
+    const tot = list.reduce((s, r) => ({ c: s.c + r.compradoV, v: s.v + r.vendidoV, l: s.l + r.perdasV, e: s.e + (r.p ? r.atual * (Number(r.p.avgCost) || 0) : 0) }), { c: 0, v: 0, l: 0, e: 0 });
+    window.__impReport = list;
+    return `
+      <div class="adm-section-title"><h4>Controle geral — comprado × vendido × estoque</h4>
+        <div class="adm-toolbar-right">${monthOptions('invMes')}<button class="adm-btn adm-btn-ghost adm-btn-sm" onclick="ImperadorAdmin.reportCsv()">${I('download', 15)} Planilha</button></div></div>
+      <div class="adm-kpis">
+        ${kpi('Comprado no mês', brl(tot.c), 'notas aprovadas (custo)', 'truck')}
+        ${kpi('Consumido em vendas', brl(tot.v), 'custo das mercadorias vendidas', 'cart')}
+        ${kpi('Perdas', brl(tot.l), 'quebras e perdas lançadas', 'alert', tot.l ? 'tone-bad' : '')}
+        ${kpi('Estoque atual', brl(tot.e), 'a custo médio', 'box')}
+      </div>
+      <div class="adm-card adm-card-flush"><div class="adm-table-wrap"><table class="adm-table">
+        <thead><tr><th>Produto</th><th class="r">Comprado</th><th class="r">Vendido</th><th class="r">Perdas</th><th class="r">Ajustes</th><th class="r">Estoque atual</th><th class="r">Valor atual</th></tr></thead>
+        <tbody>${list.map(r => `<tr><td><strong>${esc(r.name)}</strong><small>${esc(r.p ? r.p.unit : '')}</small></td>
+          <td class="r">${r.comprado ? qtyFmt(r.comprado) : '—'}<small>${r.compradoV ? brl(r.compradoV) : ''}</small></td>
+          <td class="r">${r.vendido ? qtyFmt(r.vendido) : '—'}<small>${r.vendidoV ? brl(r.vendidoV) : ''}</small></td>
+          <td class="r ${r.perdas ? 'bad' : ''}">${r.perdas ? qtyFmt(r.perdas) : '—'}</td>
+          <td class="r">${r.ajustes ? (r.ajustes > 0 ? '+' : '') + qtyFmt(r.ajustes) : '—'}</td>
+          <td class="r"><strong>${qtyFmt(r.atual)}</strong></td><td class="r">${r.p ? brl(r.atual * (Number(r.p.avgCost) || 0)) : '—'}</td></tr>`).join('')}</tbody>
+        </table></div></div>`;
+  }
+  function reportCsv() {
+    const list = window.__impReport || [];
+    const head = ['Produto', 'Unidade', 'Comprado', 'Comprado (R$)', 'Vendido', 'Custo vendido (R$)', 'Perdas', 'Ajustes', 'Estoque atual', 'Valor atual (R$)'];
+    const rows = list.map(r => [r.name, r.p ? r.p.unit : '', csvNum(r.comprado), csvNum(r.compradoV), csvNum(r.vendido), csvNum(r.vendidoV), csvNum(r.perdas), csvNum(r.ajustes), csvNum(r.atual), csvNum(r.p ? r.atual * (Number(r.p.avgCost) || 0) : 0)]);
+    download(`controle-estoque-${view.invMes || thisMonth()}.csv`, [head, ...rows].map(r => r.map(csvCell).join(';')).join('\n'));
+  }
+
   function movementsTable() {
     const movs = ((S().erp || {}).movements || []).slice(0, 300);
-    const names = { entrada: 'Entrada', transferencia: 'Transferência', venda: 'Venda', ajuste: 'Ajuste', perda: 'Perda', estorno: 'Estorno' };
-    const loc = { deposito: 'Depósito', bar: 'Bar (venda)', uso: 'Bar (uso)', fornecedor: 'Fornecedor', cliente: 'Cliente', ajuste: 'Ajuste' };
+    const names = { entrada: 'Entrada', transferencia: 'Transferência', venda: 'Venda', ajuste: 'Ajuste', perda: 'Perda', estorno: 'Estorno', inventario: 'Inventário' };
+    const loc = { deposito: 'Depósito', bar: 'Bar (venda)', uso: 'Bar (uso)', fornecedor: 'Fornecedor', cliente: 'Cliente', ajuste: 'Ajuste', inventario: 'Inventário' };
     if (!movs.length) return empty('transfer', 'Nenhuma movimentação ainda');
     return `<div class="adm-card adm-card-flush"><div class="adm-table-wrap"><table class="adm-table">
       <thead><tr><th>Data</th><th>Tipo</th><th>Produto</th><th class="r">Qtd.</th><th>De → Para</th><th class="r">Custo</th><th>Usuário</th><th>Obs.</th></tr></thead>
@@ -1408,7 +1727,10 @@ const ImperadorAdmin = (() => {
     const st = S();
     const cats = st.categories || [];
     const q = view.produtosQ.toLowerCase();
-    const items = (st.menuItems || []).filter(i => (!q || i.name.toLowerCase().includes(q)) && (!view.produtosCat || i.categoryId === view.produtosCat));
+    const items = (st.menuItems || []).filter(i => (!q || i.name.toLowerCase().includes(q)) && (!view.produtosCat || i.categoryId === view.produtosCat)
+      && (view.produtosDisp === 'fora' ? i.available === false : view.produtosDisp === 'esgotado' ? i.soldOut : true));
+    const foraCount = (st.menuItems || []).filter(i => i.available === false).length;
+    const esgCount = (st.menuItems || []).filter(i => i.soldOut && i.available !== false).length;
     const rows = items.map(i => {
       const cost = itemCost(i);
       const price = Number(i.price) || 0;
@@ -1426,15 +1748,17 @@ const ImperadorAdmin = (() => {
         ${kpi('Margem média', pct(avgMargin), 'Lucro sobre o preço de venda', 'percent')}
         ${kpi('Abaixo da margem desejada', below, below ? 'Revise o preço desses itens' : 'Todos dentro da meta', 'alert', below ? 'tone-warn' : 'tone-ok')}
       </div>
-      <div class="adm-note">${I('info', 16)} <span><strong>Como funciona:</strong> monte a ficha técnica (ex.: Caipiroska = 60 ml de vodka + 120 g de limão + 30 g de açúcar). O custo vem do custo médio do estoque. Defina o <strong>lucro desejado sobre o custo</strong>: comprou a garrafa por R$ 100 e quer vender por R$ 200 → 100%.</span></div>
+      <div class="adm-note">${I('info', 16)} <span><strong>No cardápio:</strong> desligue para tirar o item do site, do cardápio QR, do tablet e do chat (volta quando religar). Itens cuja ficha técnica não tem estoque no bar aparecem como <strong>Esgotado</strong> automaticamente. <strong>Como funciona:</strong> monte a ficha técnica (ex.: Caipiroska = 60 ml de vodka + 120 g de limão + 30 g de açúcar). O custo vem do custo médio do estoque. Defina o <strong>lucro desejado sobre o custo</strong>: comprou a garrafa por R$ 100 e quer vender por R$ 200 → 100%.</span></div>
       <div class="adm-toolbar">
+        ${tabs('produtosDisp', [['todos', 'Todos'], ['esgotado', 'Esgotados agora', esgCount], ['fora', 'Fora do cardápio', foraCount]])}
         <div class="adm-search">${I('search', 16)}<input placeholder="Buscar item" value="${esc(view.produtosQ)}" onchange="ImperadorAdmin.setView('produtosQ', this.value)" /></div>
         <select class="adm-select" onchange="ImperadorAdmin.setView('produtosCat', this.value)"><option value="">Todas as categorias</option>${cats.map(c => `<option value="${esc(c.id)}" ${c.id === view.produtosCat ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
       </div>
       <div class="adm-card adm-card-flush"><div class="adm-table-wrap"><table class="adm-table">
-        <thead><tr><th>Item de venda</th><th>Composição</th><th class="r">Custo</th><th class="r">Preço atual</th><th class="r">Lucro s/ custo</th><th class="r">Margem</th><th class="r">Meta</th><th class="r">Preço sugerido</th><th></th></tr></thead>
-        <tbody>${rows.map(r => `<tr class="${r.below ? 'row-warn' : ''}">
-          <td><strong>${esc(r.i.name)}</strong><small>${esc((cats.find(c => c.id === r.i.categoryId) || {}).name || '')}</small></td>
+        <thead><tr><th>No cardápio</th><th>Item de venda</th><th>Composição</th><th class="r">Custo</th><th class="r">Preço atual</th><th class="r">Lucro s/ custo</th><th class="r">Margem</th><th class="r">Meta</th><th class="r">Preço sugerido</th><th></th></tr></thead>
+        <tbody>${rows.map(r => `<tr class="${r.i.available === false ? 'row-off' : r.below ? 'row-warn' : ''}">
+          <td>${can('produtos', 'use') ? `<label class="adm-switch" title="${r.i.available === false ? 'Fora do cardápio' : 'No cardápio'}"><input type="checkbox" ${r.i.available !== false ? 'checked' : ''} onchange="ImperadorAdmin.act('item_disponibilidade',{menuItemId:'${esc(r.i.id)}',available:this.checked},{close:false})" /><span></span></label>` : (r.i.available === false ? '<span class="adm-pill bad">Fora</span>' : '<span class="adm-pill ok">Sim</span>')}</td>
+          <td><strong>${esc(r.i.name)}</strong>${r.i.soldOut && r.i.available !== false ? ' <span class="adm-pill bad">Esgotado</span>' : ''}<small>${esc((cats.find(c => c.id === r.i.categoryId) || {}).name || '')}</small></td>
           <td>${(r.i.composition || []).length ? `<span class="adm-pill info">${(r.i.composition || []).length} insumo(s)</span>` : '<span class="adm-pill">Custo manual</span>'}</td>
           <td class="r">${brl(r.cost)}</td><td class="r"><strong>${brl(r.price)}</strong></td>
           <td class="r ${r.below ? 'bad' : 'ok'}">${pct(r.markup)}</td><td class="r">${pct(r.margin)}</td>
@@ -2239,6 +2563,8 @@ const ImperadorAdmin = (() => {
     openPdv, pdvFilter, pdvAdd, pdvQty, pdvSet, pdvFinish, viewOrder, cancelOrder, openPay,
     sellerDetail, openExpense, openEmployee, saveEmployee,
     openUser, userRole, userPerm, saveUser, deleteUser,
+    tvPromoAdd, tvPromoToggle, tvPromoDel, tvSaveConfig, tvCall, openSellItem, siPreview,
+    invSet, invSave, invFinish, invCsv, invPrint, reportCsv,
     chatOpen, chatSend, chatClose, tvToggleSound, tvFullscreen, tvExit, tvToRestock,
     restockToggle, openPO, poSet, poFillContact, poRow, poRowAdd, poRowDel, savePO, poFromSupplier, poFromSelection, sendPO, poMark, printPO, receiptFromPO, openRole, rolePerm, saveRole, deleteRole, openDevice, endSessions
   };
