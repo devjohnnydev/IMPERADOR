@@ -109,10 +109,13 @@ def garantir_erp(estado: Dict) -> bool:
             item.setdefault("targetMarkup", 100)
         alterou = True
     erp = estado["erp"]
-    for chave in ("products", "receipts", "movements"):
+    for chave in ("products", "receipts", "movements", "purchaseOrders"):
         if not isinstance(erp.get(chave), list):
             erp[chave] = []
             alterou = True
+    if not isinstance(erp.get("suppliers"), dict):
+        erp["suppliers"] = {}
+        alterou = True
     if not isinstance(estado.get("chats"), list):
         estado["chats"] = []
         alterou = True
@@ -283,6 +286,7 @@ def acao_nota_salvar(estado: Dict, p: Dict, user: Dict) -> str:
         "noteValue": valor_nota, "itemsTotal": soma, "valueDivergence": round(valor_nota - soma, 2),
         "hasQtyDivergence": any(i["divergent"] for i in itens),
         "items": itens, "notes": _txt(p.get("notes"), 500),
+        "purchaseOrderId": _txt(p.get("purchaseOrderId"), 40),
     }
     if not dados["supplier"] or not dados["number"]:
         raise ErroNegocio("Informe o fornecedor e o número da nota.")
@@ -352,6 +356,9 @@ def acao_nota_analisar(estado: Dict, p: Dict, user: Dict) -> str:
              f"NF {nota.get('number')} - {nota.get('supplier')}", nota["id"], qtd * custo)
     nota.update({"status": "aprovada", "reviewedBy": user["id"], "reviewedByName": user["name"],
                  "reviewedAt": _agora(), "reviewNote": observacao})
+    pc = next((x for x in estado["erp"].get("purchaseOrders", []) if x.get("id") == nota.get("purchaseOrderId")), None)
+    if pc and pc.get("status") in ("rascunho", "enviado"):
+        pc.update({"status": "recebido", "receivedAt": _agora(), "receiptId": nota["id"]})
     return "Nota aprovada: itens lançados no depósito."
 
 
@@ -643,6 +650,84 @@ def acao_funcionario_excluir(estado: Dict, p: Dict, user: Dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Pedido de compra ao fornecedor (reposição do estoque)
+# ---------------------------------------------------------------------------
+def _proximo_numero_pc(estado: Dict) -> str:
+    nums = []
+    for pc in estado["erp"].get("purchaseOrders", []):
+        try:
+            nums.append(int(str(pc.get("number", "PC-0")).split("-")[-1]))
+        except ValueError:
+            pass
+    return f"PC-{(max(nums) + 1) if nums else 1:04d}"
+
+
+def acao_pc_salvar(estado: Dict, p: Dict, user: Dict) -> str:
+    lista = estado["erp"]["purchaseOrders"]
+    pc = next((x for x in lista if x.get("id") == p.get("id")), None) if p.get("id") else None
+    if pc and pc.get("status") != "rascunho":
+        raise ErroNegocio("Somente pedidos em rascunho podem ser alterados.")
+    fornecedor = _txt(p.get("supplier"), 120)
+    if not fornecedor:
+        raise ErroNegocio("Informe o fornecedor.")
+    produtos = _produtos(estado)
+    itens = []
+    for it in (p.get("items") or [])[:120]:
+        prod = produtos.get(it.get("productId"))
+        qtd = _num(it.get("qty"))
+        if not prod or qtd <= 0:
+            continue
+        custo = max(0.0, _num(it.get("unitCost"), _num(prod.get("lastCost")) or _num(prod.get("avgCost"))))
+        itens.append({"productId": prod["id"], "name": prod["name"], "unit": prod.get("unit", "un"),
+                      "qty": round(qtd, 3), "unitCost": round(custo, 2), "total": round(qtd * custo, 2)})
+    if not itens:
+        raise ErroNegocio("Adicione pelo menos um item com quantidade.")
+    contato = {"phone": _txt(p.get("supplierPhone"), 30), "email": _txt(p.get("supplierEmail"), 120)}
+    dados = {"supplier": fornecedor, "supplierPhone": contato["phone"], "supplierEmail": contato["email"],
+             "items": itens, "total": round(sum(i["total"] for i in itens), 2),
+             "expectedDate": _txt(p.get("expectedDate"), 10), "notes": _txt(p.get("notes"), 500)}
+    estado["erp"]["suppliers"][fornecedor] = contato
+    for it in itens:
+        if not produtos[it["productId"]].get("supplier"):
+            produtos[it["productId"]]["supplier"] = fornecedor
+    if pc:
+        pc.update(dados)
+        pc["updatedAt"] = _agora()
+        return f"Pedido {pc['number']} atualizado."
+    pc = {"id": _id("PC"), "number": _proximo_numero_pc(estado), "status": "rascunho", "createdAt": _agora(),
+          "createdBy": user["id"], "createdByName": user["name"], **dados}
+    lista.insert(0, pc)
+    return f"Pedido de compra {pc['number']} criado."
+
+
+def acao_pc_status(estado: Dict, p: Dict, user: Dict) -> str:
+    pc = next((x for x in estado["erp"]["purchaseOrders"] if x.get("id") == p.get("id")), None)
+    if not pc:
+        raise ErroNegocio("Pedido de compra não encontrado.")
+    novo = p.get("status")
+    validos = {"rascunho": {"enviado", "cancelado"}, "enviado": {"recebido", "cancelado", "rascunho"}}
+    if novo not in validos.get(pc.get("status"), set()):
+        raise ErroNegocio("Mudança de situação inválida.")
+    pc["status"] = novo
+    pc[{"enviado": "sentAt", "recebido": "receivedAt", "cancelado": "cancelledAt", "rascunho": "updatedAt"}[novo]] = _agora()
+    if novo == "enviado":
+        pc["sentBy"] = user["name"]
+    return {"enviado": f"Pedido {pc['number']} marcado como enviado ao fornecedor.", "recebido": "Pedido marcado como recebido.",
+            "cancelado": "Pedido cancelado.", "rascunho": "Pedido voltou para rascunho."}[novo]
+
+
+def acao_pc_excluir(estado: Dict, p: Dict, user: Dict) -> str:
+    lista = estado["erp"]["purchaseOrders"]
+    pc = next((x for x in lista if x.get("id") == p.get("id")), None)
+    if not pc:
+        raise ErroNegocio("Pedido de compra não encontrado.")
+    if pc.get("status") != "rascunho":
+        raise ErroNegocio("Somente rascunhos podem ser excluídos (cancele os enviados).")
+    estado["erp"]["purchaseOrders"] = [x for x in lista if x is not pc]
+    return "Rascunho excluído."
+
+
+# ---------------------------------------------------------------------------
 # Comissão: igual para todos ou individual por vendedor
 # ---------------------------------------------------------------------------
 def acao_comissao_config(estado: Dict, p: Dict, user: Dict) -> str:
@@ -887,6 +972,9 @@ ACOES: Dict[str, Tuple[str, str, Callable]] = {
     "funcionario_salvar": ("financeiro", "edit", acao_funcionario_salvar),
     "funcionario_excluir": ("financeiro", "edit", acao_funcionario_excluir),
     "comissao_config": ("comissoes", "edit", acao_comissao_config),
+    "pc_salvar": ("estoque", "edit", acao_pc_salvar),
+    "pc_status": ("estoque", "edit", acao_pc_status),
+    "pc_excluir": ("estoque", "edit", acao_pc_excluir),
     "chat_responder": ("vendas", "use", acao_chat_responder),
     "dispositivo_salvar": ("usuarios", "edit", acao_dispositivo_salvar),
     "dispositivo_excluir": ("usuarios", "edit", acao_dispositivo_excluir),
@@ -941,6 +1029,9 @@ def estado_para_usuario(estado: Dict, user: Dict) -> Dict:
         erp["receipts"] = []
     if not pode("estoque"):
         erp["movements"] = []
+    if not (pode("estoque") or pode("recebimento") or pode("aprovacoes") or pode("financeiro")):
+        erp["purchaseOrders"] = []
+        erp["suppliers"] = {}
 
     if pode("vendas", "edit") or pode("comissoes") or pode("financeiro") or pode("vendas", "view") and not pode("vendas", "use"):
         pass  # vê todos os pedidos

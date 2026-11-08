@@ -50,7 +50,7 @@ const ImperadorAdmin = (() => {
     recebimento: 'pendente', aprovacoes: 'pendente', estoque: 'posicao', estoqueQ: '', estoqueCat: '',
     vendas: 'abertos', vendasPeriodo: 'hoje', vendasVendedor: '', comissoesMes: thisMonth(),
     financeiro: 'resumo', financeiroMes: thisMonth(), site: 'home', produtosQ: '', produtosCat: '',
-    iam: 'usuarios', chatSel: ''
+    iam: 'usuarios', chatSel: '', reposicaoTodos: false
   };
 
   function loadSession() {
@@ -348,6 +348,8 @@ const ImperadorAdmin = (() => {
 
   function render() {
     if (!isLoggedIn()) return renderLogin();
+    document.body.classList.toggle('tv-mode', A().getUi().adminTab === 'tv' && can('vendas'));
+    if (A().getUi().adminTab === 'tv' && can('vendas')) return renderTv();
     const mod = currentModule();
     if (!mod) {
       return `<div class="adm-shell"><div class="adm-empty-full">${I('lock', 40)}<h2>Sem módulos liberados</h2><p>Peça ao administrador para liberar o acesso.</p><button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.logout()">${I('logout', 16)} Sair</button></div></div>`;
@@ -390,6 +392,7 @@ const ImperadorAdmin = (() => {
                 </button>`).join('')}`).join('')}
           </nav>
           <div class="adm-side-links">
+            ${can('vendas') ? `<button class="tv-link" onclick="ImperadorApp.setAdminTab('tv')">${I('monitor', 16)} Modo TV — vendas ao vivo</button>` : ''}
             <button onclick="ImperadorApp.setViewMode('home')">${I('globe', 16)} Ver site</button>
             <button onclick="ImperadorApp.setViewMode('menu')">${I('phone', 16)} Cardápio QR</button>
             <button onclick="ImperadorApp.setViewMode('tablet')">${I('tablet', 16)} Tablet da mesa</button>
@@ -534,6 +537,10 @@ const ImperadorAdmin = (() => {
       const d = dre(thisMonth());
       kpis.push(kpi('Resultado do mês', brl(d.net), `Margem ${pct(d.revenue ? d.net / d.revenue * 100 : 0)}`, 'wallet', d.net >= 0 ? 'tone-ok' : 'tone-bad'));
     }
+    if (can('vendas')) {
+      parts.push(`<div class="adm-tv-cta"><div>${I('monitor', 22)}<div><strong>Modo TV</strong><small>Vendas do dia em tempo real, por vendedor, mais vendidos e o que repor — ideal para deixar numa TV ou monitor.</small></div></div>
+        <button class="adm-btn adm-btn-primary" onclick="ImperadorApp.setAdminTab('tv')">${I('monitor', 16)} Abrir Modo TV</button></div>`);
+    }
     parts.push(`<div class="adm-kpis">${kpis.join('')}</div>`);
 
     if (can('vendas', 'use')) {
@@ -570,6 +577,156 @@ const ImperadorAdmin = (() => {
     if (row.length) parts.push(`<div class="adm-grid-2">${row.join('')}</div>`);
     return parts.join('');
   }
+
+  // ==========================================================================
+  // MODO TV — vendas do dia em tempo real
+  // ==========================================================================
+  let tvSeen = null;
+  let tvSound = true;
+  let tvTimer = null;
+  let tvClock = null;
+
+  function renderTv() {
+    const st = S();
+    const now = new Date();
+    const todayKey = today();
+    const orders = validOrders().filter(o => orderDay(o) === todayKey);
+    const ydate = new Date(Date.now() - 864e5);
+    const yKey = `${ydate.getFullYear()}-${pad(ydate.getMonth() + 1)}-${pad(ydate.getDate())}`;
+    const nowHM = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const yOrders = validOrders().filter(o => orderDay(o) === yKey && String(o.ts || '').slice(11, 16) <= nowHM);
+    const total = orders.reduce((s, o) => s + (Number(o.total) || 0), 0);
+    const yTotal = yOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
+    const paid = orders.filter(o => o.paymentStatus === 'pago').reduce((s, o) => s + (Number(o.total) || 0), 0);
+    const itemsQty = orders.reduce((s, o) => s + (o.items || []).reduce((a, l) => a + (Number(l.qty) || 0), 0), 0);
+    const diff = yTotal ? (total - yTotal) / yTotal * 100 : null;
+    const monthTotal = validOrders().filter(o => orderDay(o).slice(0, 7) === thisMonth()).reduce((s, o) => s + (Number(o.total) || 0), 0);
+
+    // Por hora
+    const byHour = {};
+    orders.forEach(o => { const h = Number(String(o.ts || '').slice(11, 13)); byHour[h] = (byHour[h] || 0) + (Number(o.total) || 0); });
+    const hours = Object.keys(byHour).map(Number);
+    const hStart = hours.length ? Math.min(...hours, now.getHours() - 5) : now.getHours() - 5;
+    const hList = [];
+    for (let h = Math.max(0, hStart); h <= now.getHours(); h++) hList.push({ h, v: byHour[h] || 0 });
+    const hMax = Math.max(1, ...hList.map(x => x.v));
+
+    // Por vendedor
+    const sellers = {};
+    orders.forEach(o => {
+      const k = o.sellerId || (o.source === 'Chat do cliente' ? '_chat' : '_auto');
+      const name = o.sellerName || (k === '_chat' ? 'Chat do cliente' : 'Autoatendimento');
+      sellers[k] = sellers[k] || { name, total: 0, orders: 0 };
+      sellers[k].total += Number(o.total) || 0;
+      sellers[k].orders++;
+    });
+    const sellerList = Object.values(sellers).sort((a, b) => b.total - a.total);
+    const sMax = Math.max(1, ...sellerList.map(x => x.total));
+
+    const top = topItems(orders).sort((a, b) => b.qty - a.qty).slice(0, 8);
+    const tMax = Math.max(1, ...top.map(x => x.qty));
+
+    // Feed de pedidos (destaca os novos)
+    const ids = new Set(orders.map(o => o.id));
+    const fresh = tvSeen ? orders.filter(o => !tvSeen.has(o.id)).map(o => o.id) : [];
+    tvSeen = ids;
+    if (fresh.length && tvSound) beep();
+    const feed = orders.slice().sort((a, b) => String(b.ts).localeCompare(String(a.ts))).slice(0, 9);
+
+    const reorder = can('estoque') ? restockList().filter(r => r.need > 0).slice(0, 8) : [];
+    const calls = (st.waiterCalls || []).filter(c => c.status === 'pendente').length;
+    const chats = (st.chats || []).reduce((s, c) => s + (Number(c.unreadStaff) || 0), 0);
+
+    return `
+      <div class="tv">
+        <header class="tv-head">
+          <div class="tv-brand">${I('crown', 26)}<div><strong>${esc((st.settings || {}).brandName || 'Imperador')}</strong><small>Vendas de hoje · ao vivo</small></div></div>
+          <div class="tv-live"><span class="tv-dot"></span> AO VIVO · atualiza a cada 4 s</div>
+          <div class="tv-clock" id="tvClock">${now.toLocaleTimeString('pt-BR')}</div>
+          <div class="tv-actions">
+            <button title="${tvSound ? 'Som ligado' : 'Som desligado'}" onclick="ImperadorAdmin.tvToggleSound()">${I(tvSound ? 'bell' : 'x-circle', 18)}</button>
+            <button title="Tela cheia" onclick="ImperadorAdmin.tvFullscreen()">${I('external', 18)}</button>
+            <button title="Sair do Modo TV" onclick="ImperadorAdmin.tvExit()">${I('x', 18)}</button>
+          </div>
+        </header>
+
+        <section class="tv-kpis">
+          <div class="tv-kpi big"><small>Vendas de hoje</small><strong>${brl(total)}</strong>
+            <span class="${diff == null ? '' : diff >= 0 ? 'up' : 'down'}">${diff == null ? 'Sem vendas ontem até esta hora' : `${diff >= 0 ? '▲' : '▼'} ${pct(Math.abs(diff))} vs. ontem até ${nowHM}`}</span></div>
+          <div class="tv-kpi"><small>Pedidos</small><strong>${orders.length}</strong><span>${qtyFmt(itemsQty)} itens</span></div>
+          <div class="tv-kpi"><small>Ticket médio</small><strong>${brl(orders.length ? total / orders.length : 0)}</strong><span>por pedido</span></div>
+          <div class="tv-kpi"><small>Recebido</small><strong>${brl(paid)}</strong><span>${brl(total - paid)} a receber</span></div>
+          <div class="tv-kpi"><small>No mês</small><strong>${brl(monthTotal)}</strong><span>${calls + chats ? `${calls} chamado(s) · ${chats} msg` : 'sem chamados pendentes'}</span></div>
+        </section>
+
+        <section class="tv-grid">
+          <div class="tv-card tv-hours"><h3>Vendas por hora</h3>
+            <div class="tv-bars">${hList.map(x => `<div class="tv-bar ${x.h === now.getHours() ? 'now' : ''}"><span class="tv-bar-val">${x.v ? brl(x.v).replace('R$', '').trim() : ''}</span><i style="height:${Math.max(3, x.v / hMax * 100)}%"></i><b>${pad(x.h)}h</b></div>`).join('')}</div>
+          </div>
+
+          <div class="tv-card"><h3>Por vendedor</h3>
+            ${sellerList.length ? `<ul class="tv-rank">${sellerList.map((x, i) => `<li><div class="tv-rank-top"><span><em>${i + 1}</em>${esc(x.name)}</span><strong>${brl(x.total)}</strong></div>
+              <div class="tv-meter"><i style="width:${x.total / sMax * 100}%"></i></div><small>${x.orders} pedido(s)</small></li>`).join('')}</ul>` : `<p class="tv-empty">Aguardando o primeiro pedido do dia…</p>`}
+          </div>
+
+          <div class="tv-card"><h3>O que mais está saindo</h3>
+            ${top.length ? `<ul class="tv-rank">${top.map((x, i) => `<li><div class="tv-rank-top"><span><em>${i + 1}</em>${esc(x.name)}</span><strong>${qtyFmt(x.qty)}×</strong></div>
+              <div class="tv-meter gold"><i style="width:${x.qty / tMax * 100}%"></i></div><small>${brl(x.total)}</small></li>`).join('')}</ul>` : `<p class="tv-empty">Nenhum item vendido ainda hoje.</p>`}
+          </div>
+
+          <div class="tv-card tv-feed"><h3>Últimos pedidos</h3>
+            ${feed.length ? feed.map(o => `<div class="tv-order ${fresh.includes(o.id) ? 'new' : ''}">
+              <time>${String(o.ts || '').slice(11, 16)}</time>
+              <div><strong>${esc(o.tableId || 'Balcão')}</strong><small>${esc(o.sellerName || (o.source === 'Chat do cliente' ? 'Chat' : 'Autoatendimento'))} · ${(o.items || []).map(l => `${l.qty}× ${esc(l.name)}`).join(', ')}</small></div>
+              <strong>${brl(o.total)}</strong>${statusPill(o.paymentStatus)}</div>`).join('') : `<p class="tv-empty">Os pedidos aparecem aqui na hora.</p>`}
+          </div>
+
+          ${can('estoque') ? `<div class="tv-card tv-restock"><h3>${I('alert', 18)} Precisa repor ${reorder.length ? `<span>${reorder.length}</span>` : ''}</h3>
+            ${reorder.length ? `<ul class="tv-list">${reorder.map(r => `<li><span>${esc(r.p.name)}</span><small>tem ${qtyFmt(r.total)} · comprar <strong>${qtyFmt(r.need)} ${esc(r.p.unit)}</strong></small></li>`).join('')}</ul>
+            ${can('estoque', 'edit') ? `<button class="tv-btn" onclick="ImperadorAdmin.tvToRestock()">${I('truck', 16)} Gerar pedido de compra</button>` : ''}` : `<p class="tv-empty ok">${I('check-circle', 18)} Estoque em dia.</p>`}
+          </div>` : ''}
+        </section>
+      </div>`;
+  }
+
+  function beep() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [0, 0.16].forEach((t, i) => {
+        const o = ctx.createOscillator(); const g = ctx.createGain();
+        o.frequency.value = i ? 1320 : 880; o.type = 'sine';
+        g.gain.setValueAtTime(0.0001, ctx.currentTime + t);
+        g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.18);
+        o.connect(g).connect(ctx.destination); o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.2);
+      });
+    } catch (e) { /* sem áudio */ }
+  }
+  function tvToggleSound() { tvSound = !tvSound; rerender(); }
+  function tvFullscreen() {
+    const el = document.documentElement;
+    if (document.fullscreenElement) document.exitFullscreen(); else if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+  }
+  function tvExit() {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    tvSeen = null;
+    ImperadorApp.setAdminTab('dashboard');
+  }
+  function tvToRestock() { view.estoque = 'reposicao'; tvExit(); ImperadorApp.setAdminTab('estoque'); }
+
+  // Atualização rápida enquanto o Modo TV está aberto
+  setInterval(async () => {
+    if (!isLoggedIn() || A().getUi().viewMode !== 'admin' || A().getUi().adminTab !== 'tv' || document.hidden) return;
+    try {
+      const res = await fetch('/api/state');
+      const data = await res.json();
+      if (data.authenticated && data.state) { applyServer(data); rerender(); }
+    } catch (e) { /* sem conexão */ }
+  }, 4000);
+  setInterval(() => {
+    const c = document.getElementById('tvClock');
+    if (c) c.textContent = new Date().toLocaleTimeString('pt-BR');
+  }, 1000);
 
   function barChart(days) {
     const max = Math.max(1, ...days.map(d => d.total));
@@ -656,6 +813,10 @@ const ImperadorAdmin = (() => {
           <label class="adm-field"><span>Recebimento</span><input type="date" value="${esc(draft.receivedDate)}" oninput="ImperadorAdmin.dSet('receivedDate',this.value)" /></label>
           <label class="adm-field"><span>Valor total da nota (R$) *</span><input type="number" step="0.01" min="0" value="${esc(draft.noteValue)}" oninput="ImperadorAdmin.dSet('noteValue',this.value,true)" /></label>
         </div>
+        ${pos().some(x => x.status === 'enviado' || x.status === 'rascunho') ? `<label class="adm-field"><span>Pedido de compra (opcional)</span>
+          <select onchange="ImperadorAdmin.receiptFromPO(this.value)"><option value="">— Nota sem pedido de compra —</option>
+            ${pos().filter(x => x.status === 'enviado' || x.status === 'rascunho').map(x => `<option value="${esc(x.id)}" ${draft.purchaseOrderId === x.id ? 'selected' : ''}>${esc(x.number)} · ${esc(x.supplier)} · ${brl(x.total)}</option>`).join('')}
+          </select><small>Preenche fornecedor e itens. Ao aprovar a nota, o pedido fica como recebido.</small></label>` : ''}
         <div class="adm-section-title"><h4>Itens da nota</h4><button class="adm-btn adm-btn-ghost adm-btn-sm" onclick="ImperadorAdmin.rowAdd()">${I('plus', 15)} Adicionar item</button></div>
         <div id="rcRows">${receiptRows()}</div>
         <div class="adm-summary" id="rcSummary">${receiptSummary()}</div>
@@ -735,6 +896,21 @@ const ImperadorAdmin = (() => {
   function rowAdd() { draft.items.push(blankRow()); document.getElementById('rcRows').innerHTML = receiptRows(); }
   function rowDel(i) { draft.items.splice(i, 1); document.getElementById('rcRows').innerHTML = receiptRows(); document.getElementById('rcSummary').innerHTML = receiptSummary(); }
   function saveReceipt() { act('nota_salvar', draft); }
+  function receiptFromPO(id) {
+    draft.purchaseOrderId = id;
+    const pc = pos().find(x => x.id === id);
+    if (!pc) return;
+    draft.supplier = pc.supplier;
+    draft.items = pc.items.map(i => Object.assign(blankRow(), { productId: i.productId, name: i.name, noteQty: i.qty, receivedQty: i.qty, unitCost: i.unitCost }));
+    draft.noteValue = pc.total;
+    const box = document.querySelector('.gm-body');
+    const supInput = box && box.querySelector('input');
+    if (supInput) supInput.value = pc.supplier;
+    const noteInput = [...box.querySelectorAll('input[type=number]')][0];
+    if (noteInput) noteInput.value = pc.total;
+    document.getElementById('rcRows').innerHTML = receiptRows();
+    document.getElementById('rcSummary').innerHTML = receiptSummary();
+  }
   function deleteReceipt(id) { if (confirm('Excluir esta nota pendente?')) act('nota_excluir', { id }); }
 
   function receiptDetail(n, withCompare) {
@@ -836,10 +1012,15 @@ const ImperadorAdmin = (() => {
         ${kpi('No bar (uso)', brl(sumLoc('uso')), 'Abertos para drinks e porções', 'cocktail')}
         ${kpi('Abaixo do mínimo', low, '', 'alert', low ? 'tone-bad' : 'tone-ok')}
       </div>`;
-    if (view.estoque === 'movimentos') return head + tabs('estoque', [['posicao', 'Posição do estoque'], ['movimentos', 'Movimentações']]) + movementsTable();
+    const needCount = restockList().filter(r => r.need > 0).length;
+    const openPOs = pos().filter(x => x.status === 'rascunho' || x.status === 'enviado').length;
+    const estTabs = [['posicao', 'Posição do estoque'], ['reposicao', 'Reposição', needCount], ['compras', 'Pedidos de compra', openPOs], ['movimentos', 'Movimentações']];
+    if (view.estoque === 'movimentos') return head + tabs('estoque', estTabs) + movementsTable();
+    if (view.estoque === 'reposicao') return head + tabs('estoque', estTabs) + restockTable();
+    if (view.estoque === 'compras') return head + tabs('estoque', estTabs) + poTable();
     return head + `
       <div class="adm-toolbar">
-        ${tabs('estoque', [['posicao', 'Posição do estoque'], ['movimentos', 'Movimentações']])}
+        ${tabs('estoque', estTabs)}
         <div class="adm-toolbar-right">
           <div class="adm-search">${I('search', 16)}<input placeholder="Buscar produto" value="${esc(view.estoqueQ)}" onchange="ImperadorAdmin.setView('estoqueQ', this.value)" /></div>
           <select class="adm-select" onchange="ImperadorAdmin.setView('estoqueCat', this.value)"><option value="">Todas as categorias</option>${cats.map(c => `<option ${c === view.estoqueCat ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
@@ -866,6 +1047,242 @@ const ImperadorAdmin = (() => {
               <button class="adm-icon-btn" title="Editar produto" onclick="ImperadorAdmin.openProduct('${esc(p.id)}')">${I('edit', 16)}</button>` : ''}
             </td></tr>`;
         }).join('')}</tbody></table></div>` : empty('box', 'Nenhum produto encontrado')}</div>`;
+  }
+
+  // Sugestão de compra: consumo médio dos últimos 7 dias + estoque mínimo
+  const COVER_DAYS = 7;
+  function restockList() {
+    const movs = (S().erp || {}).movements || [];
+    const lim = new Date(Date.now() - 7 * 864e5);
+    const limKey = `${lim.getFullYear()}-${pad(lim.getMonth() + 1)}-${pad(lim.getDate())}`;
+    const used = {};
+    movs.forEach(m => {
+      if (!(m.type === 'venda' || m.type === 'perda') || String(m.at).slice(0, 10) < limKey) return;
+      const k = m.productId + (m.from === 'uso' ? ':c' : ':u');
+      used[k] = (used[k] || 0) + Math.abs(Number(m.qty) || 0);
+    });
+    return products().filter(p => p.active !== false).map(p => {
+      const content = Number(p.content) || 1;
+      const daily = ((used[p.id + ':u'] || 0) + (used[p.id + ':c'] || 0) / content) / 7;
+      const total = totalUnits(p);
+      const min = Number(p.minStock) || 0;
+      const cover = daily > 0 ? total / daily : null;
+      const low = (min > 0 && total <= min) || (cover != null && cover < 3);
+      const target = daily > 0 ? daily * COVER_DAYS + min : min * 2;
+      const need = low ? Math.max(1, Math.ceil(target - total)) : 0;
+      return { p, total, min, daily, cover, need, supplier: p.supplier || '' };
+    }).sort((a, b) => (b.need > 0) - (a.need > 0) || (a.cover == null ? 1e9 : a.cover) - (b.cover == null ? 1e9 : b.cover));
+  }
+
+  let restockSel = new Set();
+  function restockTable() {
+    const list = restockList();
+    const show = view.reposicaoTodos ? list : list.filter(r => r.need > 0);
+    const edit = can('estoque', 'edit');
+    const groups = {};
+    list.filter(r => r.need > 0).forEach(r => { const k = r.supplier || 'Sem fornecedor'; (groups[k] = groups[k] || []).push(r); });
+    return `
+      <div class="adm-note">${I('info', 16)} <span>A sugestão considera o <strong>consumo médio dos últimos 7 dias</strong> (vendas e perdas) para cobrir <strong>${COVER_DAYS} dias</strong>, mais o estoque mínimo. Ajuste as quantidades no pedido antes de enviar.</span></div>
+      ${edit && Object.keys(groups).length ? `<div class="adm-supplier-btns">${Object.entries(groups).map(([sup, rs]) => `
+        <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.poFromSupplier('${esc(sup)}')">${I('truck', 16)} Pedido para <strong>${esc(sup)}</strong> <span class="adm-badge warn">${rs.length}</span></button>`).join('')}</div>` : ''}
+      <div class="adm-toolbar">
+        <label class="adm-check"><input type="checkbox" ${view.reposicaoTodos ? 'checked' : ''} onchange="ImperadorAdmin.setView('reposicaoTodos', this.checked)" /> Mostrar todos os produtos</label>
+        ${edit ? `<button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.poFromSelection()">${I('plus', 16)} Gerar pedido com selecionados</button>` : ''}
+      </div>
+      <div class="adm-card adm-card-flush">${show.length ? `<div class="adm-table-wrap"><table class="adm-table">
+        <thead><tr>${edit ? '<th></th>' : ''}<th>Produto</th><th>Fornecedor</th><th class="r">Estoque total</th><th class="r">Mínimo</th><th class="r">Consumo/dia</th><th class="r">Dura</th><th class="r">Comprar</th><th class="r">Custo estimado</th></tr></thead>
+        <tbody>${show.map(r => `<tr class="${r.need > 0 ? 'row-warn' : ''}">
+          ${edit ? `<td><input type="checkbox" class="adm-cb" ${restockSel.has(r.p.id) || (!restockSel.size && r.need > 0) ? 'checked' : ''} onchange="ImperadorAdmin.restockToggle('${esc(r.p.id)}', this.checked)" /></td>` : ''}
+          <td><strong>${esc(r.p.name)}</strong><small>${esc(r.p.category || '')} · ${esc(r.p.unit)}</small></td>
+          <td>${esc(r.supplier || '—')}</td>
+          <td class="r ${r.total <= r.min ? 'bad' : ''}">${qtyFmt(r.total)}</td><td class="r">${qtyFmt(r.min)}</td>
+          <td class="r">${r.daily ? qtyFmt(r.daily) : '—'}</td>
+          <td class="r ${r.cover != null && r.cover < 2 ? 'bad' : ''}">${r.cover == null ? '—' : r.cover < 1 ? 'menos de 1 dia' : `${qtyFmt(Math.floor(r.cover))} dia(s)`}</td>
+          <td class="r"><strong>${r.need ? `${qtyFmt(r.need)} ${esc(r.p.unit)}` : '—'}</strong></td>
+          <td class="r">${r.need ? brl(r.need * (Number(r.p.lastCost) || Number(r.p.avgCost) || 0)) : '—'}</td></tr>`).join('')}</tbody></table></div>`
+        : empty('check-circle', 'Nada para repor agora', 'Todos os produtos estão acima do mínimo e com estoque para os próximos dias.')}</div>`;
+  }
+  function restockToggle(id, on) {
+    if (!restockSel.size) restockList().filter(r => r.need > 0).forEach(r => restockSel.add(r.p.id));
+    if (on) restockSel.add(id); else restockSel.delete(id);
+  }
+
+  // ------------------------------------------------- Pedidos de compra
+  const PO_STATUS = { rascunho: ['', 'Rascunho'], enviado: ['info', 'Enviado'], recebido: ['ok', 'Recebido'], cancelado: ['bad', 'Cancelado'] };
+  const poPill = (st) => `<span class="adm-pill ${PO_STATUS[st] ? PO_STATUS[st][0] : ''}">${PO_STATUS[st] ? PO_STATUS[st][1] : esc(st)}</span>`;
+  const pos = () => ((S().erp || {}).purchaseOrders || []);
+
+  function poTable() {
+    const list = pos();
+    const edit = can('estoque', 'edit');
+    return `
+      <div class="adm-toolbar"><span class="muted">${list.length} pedido(s) de compra</span>
+        ${edit ? `<button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.openPO()">${I('plus', 16)} Novo pedido de compra</button>` : ''}</div>
+      <div class="adm-card adm-card-flush">${list.length ? `<div class="adm-table-wrap"><table class="adm-table">
+        <thead><tr><th>Pedido</th><th>Fornecedor</th><th>Itens</th><th class="r">Total</th><th>Situação</th><th>Previsão</th><th></th></tr></thead>
+        <tbody>${list.map(pc => `<tr class="${pc.status === 'cancelado' ? 'row-off' : ''}">
+          <td><strong>${esc(pc.number)}</strong><small>${fmtDate(pc.createdAt)} · ${esc(pc.createdByName || '')}</small></td>
+          <td>${esc(pc.supplier)}${pc.supplierPhone ? `<small>${esc(pc.supplierPhone)}</small>` : ''}</td>
+          <td><small class="clip">${(pc.items || []).map(i => `${qtyFmt(i.qty)} ${esc(i.unit)} ${esc(i.name)}`).join(', ')}</small></td>
+          <td class="r"><strong>${brl(pc.total)}</strong></td>
+          <td>${poPill(pc.status)}${pc.sentAt ? `<small>enviado ${fmtDate(pc.sentAt)}</small>` : ''}</td>
+          <td>${pc.expectedDate ? fmtDay(pc.expectedDate) : '—'}</td>
+          <td class="r nowrap">
+            <button class="adm-icon-btn" title="Ver / enviar" onclick="ImperadorAdmin.sendPO('${esc(pc.id)}')">${I('send', 16)}</button>
+            ${edit && pc.status === 'rascunho' ? `<button class="adm-icon-btn" title="Editar" onclick="ImperadorAdmin.openPO('${esc(pc.id)}')">${I('edit', 16)}</button>` : ''}
+          </td></tr>`).join('')}</tbody></table></div>`
+        : empty('truck', 'Nenhum pedido de compra', 'Use a aba Reposição para gerar pedidos a partir do que precisa repor.')}</div>`;
+  }
+
+  let poDraft = null;
+  function openPO(id, preset) {
+    const pc = id ? pos().find(x => x.id === id) : null;
+    const sup = (S().erp || {}).suppliers || {};
+    poDraft = pc ? JSON.parse(JSON.stringify(pc)) : Object.assign({ supplier: '', supplierPhone: '', supplierEmail: '', expectedDate: '', notes: '', items: [] }, preset || {});
+    if (!pc && poDraft.supplier && sup[poDraft.supplier]) {
+      poDraft.supplierPhone = poDraft.supplierPhone || sup[poDraft.supplier].phone || '';
+      poDraft.supplierEmail = poDraft.supplierEmail || sup[poDraft.supplier].email || '';
+    }
+    if (!poDraft.items.length) poDraft.items.push({ productId: (products()[0] || {}).id, qty: 1, unitCost: Number((products()[0] || {}).lastCost) || 0 });
+    const names = [...new Set(Object.keys(sup).concat(products().map(x => x.supplier).filter(Boolean)))];
+    openModal({
+      title: pc ? `Editar pedido ${esc(pc.number)}` : 'Novo pedido de compra', icon: 'truck', size: 'xl',
+      subtitle: 'Monte o pedido para o fornecedor. Depois de salvar, envie por WhatsApp, e-mail ou imprima.',
+      body: `
+        <div class="adm-form-grid g4">
+          <label class="adm-field span2"><span>Fornecedor *</span><input id="poSup" list="poSups" value="${esc(poDraft.supplier)}" oninput="ImperadorAdmin.poSet('supplier',this.value)" onchange="ImperadorAdmin.poFillContact(this.value)" />
+            <datalist id="poSups">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist></label>
+          <label class="adm-field"><span>WhatsApp / telefone</span><input id="poPhone" value="${esc(poDraft.supplierPhone)}" oninput="ImperadorAdmin.poSet('supplierPhone',this.value)" placeholder="(11) 99999-9999" /></label>
+          <label class="adm-field"><span>E-mail</span><input id="poMail" type="email" value="${esc(poDraft.supplierEmail)}" oninput="ImperadorAdmin.poSet('supplierEmail',this.value)" /></label>
+          <label class="adm-field"><span>Entrega desejada</span><input type="date" value="${esc(poDraft.expectedDate)}" oninput="ImperadorAdmin.poSet('expectedDate',this.value)" /></label>
+        </div>
+        <div class="adm-section-title"><h4>Itens</h4><button class="adm-btn adm-btn-ghost adm-btn-sm" onclick="ImperadorAdmin.poRowAdd()">${I('plus', 15)} Item</button></div>
+        <div id="poRows">${poRows()}</div>
+        <label class="adm-field"><span>Observações para o fornecedor</span><textarea rows="2" oninput="ImperadorAdmin.poSet('notes',this.value)" placeholder="Ex.: entregar até 16h, pagamento em boleto 28 dias">${esc(poDraft.notes)}</textarea></label>`,
+      footer: `${pc ? `<button class="adm-btn adm-btn-danger-ghost" onclick="if(confirm('Excluir este rascunho?')) ImperadorAdmin.act('pc_excluir',{id:'${esc(pc.id)}'})">${I('trash', 16)} Excluir</button><span class="gm-foot-space"></span>` : ''}
+        <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.closeModal()">Cancelar</button>
+        <button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.savePO()">${I('save', 16)} Salvar pedido</button>`
+    });
+  }
+  function poRows() {
+    const prods = products();
+    const pm = productMap();
+    const total = poDraft.items.reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.unitCost) || 0), 0);
+    return `<div class="adm-table-wrap"><table class="adm-table adm-table-edit">
+      <thead><tr><th style="min-width:240px">Produto</th><th class="r">Quantidade</th><th class="r">Custo unit. (R$)</th><th class="r">Total</th><th></th></tr></thead>
+      <tbody>${poDraft.items.map((it, i) => `<tr>
+        <td><select onchange="ImperadorAdmin.poRow(${i},'productId',this.value,true)">${prods.map(x => `<option value="${esc(x.id)}" ${x.id === it.productId ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></td>
+        <td class="r"><div class="adm-input-unit"><input type="number" min="0" step="any" value="${esc(it.qty)}" oninput="ImperadorAdmin.poRow(${i},'qty',this.value)" /><span>${esc((pm[it.productId] || {}).unit || '')}</span></div></td>
+        <td class="r"><input type="number" min="0" step="0.01" value="${esc(it.unitCost)}" oninput="ImperadorAdmin.poRow(${i},'unitCost',this.value)" /></td>
+        <td class="r" id="poTot${i}">${brl((Number(it.qty) || 0) * (Number(it.unitCost) || 0))}</td>
+        <td><button class="adm-icon-btn danger" onclick="ImperadorAdmin.poRowDel(${i})" ${poDraft.items.length < 2 ? 'disabled' : ''}>${I('trash', 16)}</button></td></tr>`).join('')}</tbody>
+      <tfoot><tr><td colspan="3">Total do pedido</td><td class="r"><strong id="poTotal">${brl(total)}</strong></td><td></td></tr></tfoot></table></div>`;
+  }
+  function poSet(k, v) { poDraft[k] = v; }
+  function poFillContact(name) {
+    const c = ((S().erp || {}).suppliers || {})[name];
+    if (!c) return;
+    if (c.phone && !val('poPhone')) { poDraft.supplierPhone = c.phone; document.getElementById('poPhone').value = c.phone; }
+    if (c.email && !val('poMail')) { poDraft.supplierEmail = c.email; document.getElementById('poMail').value = c.email; }
+  }
+  function poRow(i, k, v, rerow) {
+    const it = poDraft.items[i];
+    it[k] = k === 'productId' ? v : Number(v);
+    if (k === 'productId') { const p = productMap()[v]; it.unitCost = Number(p && (p.lastCost || p.avgCost)) || 0; }
+    if (rerow) { document.getElementById('poRows').innerHTML = poRows(); return; }
+    const c = document.getElementById('poTot' + i);
+    if (c) c.textContent = brl((Number(it.qty) || 0) * (Number(it.unitCost) || 0));
+    const t = document.getElementById('poTotal');
+    if (t) t.textContent = brl(poDraft.items.reduce((s, x) => s + (Number(x.qty) || 0) * (Number(x.unitCost) || 0), 0));
+  }
+  function poRowAdd() { const p = products()[0]; poDraft.items.push({ productId: p.id, qty: 1, unitCost: Number(p.lastCost || p.avgCost) || 0 }); document.getElementById('poRows').innerHTML = poRows(); }
+  function poRowDel(i) { poDraft.items.splice(i, 1); document.getElementById('poRows').innerHTML = poRows(); }
+  async function savePO() {
+    const data = await act('pc_salvar', poDraft);
+    if (data) { view.estoque = 'compras'; rerender(); const pc = pos()[0]; if (!poDraft.id && pc) setTimeout(() => sendPO(pc.id), 150); }
+  }
+  function presetFrom(rows, supplier) {
+    return { supplier: supplier || '', items: rows.map(r => ({ productId: r.p.id, qty: r.need || 1, unitCost: Number(r.p.lastCost || r.p.avgCost) || 0 })) };
+  }
+  function poFromSupplier(sup) {
+    const rows = restockList().filter(r => r.need > 0 && (r.supplier || 'Sem fornecedor') === sup);
+    openPO(null, presetFrom(rows, sup === 'Sem fornecedor' ? '' : sup));
+  }
+  function poFromSelection() {
+    const all = restockList();
+    const sel = restockSel.size ? all.filter(r => restockSel.has(r.p.id)) : all.filter(r => r.need > 0);
+    if (!sel.length) { A().showToast('Selecione os produtos que quer comprar.', 'danger'); return; }
+    const sups = [...new Set(sel.map(r => r.supplier).filter(Boolean))];
+    openPO(null, presetFrom(sel, sups.length === 1 ? sups[0] : ''));
+  }
+
+  function poText(pc) {
+    const s = S().settings || {};
+    return [`*Pedido de compra ${pc.number}* — ${s.brandName || 'Imperador'}`, `Fornecedor: ${pc.supplier}`, '',
+      ...(pc.items || []).map(i => `• ${qtyFmt(i.qty)} ${i.unit} — ${i.name}${i.unitCost ? ` (R$ ${num(i.unitCost, 2)})` : ''}`),
+      '', `Total estimado: ${brl(pc.total)}`, pc.expectedDate ? `Entrega desejada: ${fmtDay(pc.expectedDate)}` : '',
+      pc.notes ? `Obs.: ${pc.notes}` : '', s.address ? `Entrega em: ${s.address}` : ''].filter(l => l !== null).join('\n').replace(/\n{3,}/g, '\n\n');
+  }
+
+  function sendPO(id) {
+    const pc = pos().find(x => x.id === id);
+    if (!pc) return;
+    const edit = can('estoque', 'edit');
+    const phone = String(pc.supplierPhone || '').replace(/\D/g, '');
+    const wa = phone ? `https://wa.me/${phone.length <= 11 ? '55' + phone : phone}?text=${encodeURIComponent(poText(pc))}` : '';
+    const mail = pc.supplierEmail ? `mailto:${encodeURIComponent(pc.supplierEmail)}?subject=${encodeURIComponent(`Pedido de compra ${pc.number}`)}&body=${encodeURIComponent(poText(pc).replace(/\*/g, ''))}` : '';
+    openModal({
+      title: `Pedido de compra ${esc(pc.number)}`, subtitle: `${esc(pc.supplier)} · ${brl(pc.total)}`, icon: 'truck', size: 'lg',
+      body: `
+        <div class="adm-detail-grid">
+          <div><small>Situação</small>${poPill(pc.status)}</div>
+          <div><small>Criado</small><strong>${fmtDate(pc.createdAt)}</strong><small>${esc(pc.createdByName || '')}</small></div>
+          <div><small>Entrega desejada</small><strong>${pc.expectedDate ? fmtDay(pc.expectedDate) : '—'}</strong></div>
+          <div><small>Contato</small><strong>${esc(pc.supplierPhone || '—')}</strong><small>${esc(pc.supplierEmail || '')}</small></div>
+        </div>
+        <pre class="adm-po-preview">${esc(poText(pc).replace(/\*/g, ''))}</pre>
+        ${edit && (pc.status === 'rascunho' || pc.status === 'enviado') ? `<div class="adm-send-row">
+          ${wa ? `<a class="adm-btn adm-btn-ok" href="${wa}" target="_blank" rel="noopener" onclick="ImperadorAdmin.poMark('${esc(pc.id)}','enviado',true)">${I('whatsapp', 16)} Enviar por WhatsApp</a>` : `<span class="adm-btn adm-btn-ghost" style="opacity:.5" title="Cadastre o WhatsApp do fornecedor">${I('whatsapp', 16)} WhatsApp (sem número)</span>`}
+          ${mail ? `<a class="adm-btn adm-btn-ghost" href="${mail}" onclick="ImperadorAdmin.poMark('${esc(pc.id)}','enviado',true)">${I('send', 16)} Enviar por e-mail</a>` : ''}
+          <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.printPO('${esc(pc.id)}')">${I('printer', 16)} Imprimir / PDF</button>
+          <button class="adm-btn adm-btn-ghost" onclick="navigator.clipboard.writeText(document.querySelector('.adm-po-preview').textContent).then(()=>ImperadorApp._internal.showToast('Texto copiado','emerald'))">${I('copy', 16)} Copiar</button>
+        </div>` : `<div class="adm-send-row"><button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.printPO('${esc(pc.id)}')">${I('printer', 16)} Imprimir / PDF</button></div>`}
+        ${pc.status === 'enviado' ? `<div class="adm-note">${I('info', 16)} Quando a mercadoria chegar, o conferente lança a nota em Recebimento e escolhe este pedido — ao aprovar, ele fica como recebido.</div>` : ''}`,
+      footer: `${edit && pc.status === 'rascunho' ? `<button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.openPO('${esc(pc.id)}')">${I('edit', 16)} Editar</button>` : ''}
+        ${edit && pc.status !== 'cancelado' && pc.status !== 'recebido' ? `<button class="adm-btn adm-btn-danger-ghost" onclick="if(confirm('Cancelar este pedido?')) ImperadorAdmin.act('pc_status',{id:'${esc(pc.id)}',status:'cancelado'})">${I('x-circle', 16)} Cancelar pedido</button>` : ''}
+        <span class="gm-foot-space"></span>
+        ${edit && pc.status === 'rascunho' ? `<button class="adm-btn adm-btn-primary" onclick="ImperadorAdmin.act('pc_status',{id:'${esc(pc.id)}',status:'enviado'})">${I('check', 16)} Marcar como enviado</button>` : ''}
+        ${edit && pc.status === 'enviado' ? `<button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.act('pc_status',{id:'${esc(pc.id)}',status:'recebido'})">${I('check-circle', 16)} Marcar como recebido</button>` : ''}
+        <button class="adm-btn adm-btn-ghost" onclick="ImperadorAdmin.closeModal()">Fechar</button>`
+    });
+  }
+  function poMark(id, status, silent) {
+    const pc = pos().find(x => x.id === id);
+    if (pc && pc.status === 'rascunho') setTimeout(() => act('pc_status', { id, status }, { close: false, silent }), 400);
+  }
+  function printPO(id) {
+    const pc = pos().find(x => x.id === id);
+    if (!pc) return;
+    const s = S().settings || {};
+    const w = window.open('', '_blank');
+    if (!w) { A().showToast('Permita pop-ups para imprimir.', 'danger'); return; }
+    w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(pc.number)}</title>
+      <style>body{font-family:Inter,Arial,sans-serif;color:#111;margin:40px;max-width:820px}h1{font-size:22px;margin:0}small{color:#666}
+      .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #111;padding-bottom:14px;margin-bottom:18px}
+      table{width:100%;border-collapse:collapse;margin-top:16px}th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left;font-size:14px}
+      th{background:#f4f4f4}.r{text-align:right}.tot td{font-weight:700;border-top:2px solid #111}.box{display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:14px}
+      .sig{margin-top:60px;display:flex;gap:40px}.sig div{flex:1;border-top:1px solid #111;padding-top:6px;font-size:12px;text-align:center}</style></head><body>
+      <div class="head"><div><h1>${esc(s.brandName || 'Imperador Lounge Bar')}</h1><small>${esc(s.address || '')}</small></div>
+        <div style="text-align:right"><h1>Pedido de compra</h1><strong>${esc(pc.number)}</strong><br><small>${fmtDate(pc.createdAt)}</small></div></div>
+      <div class="box"><div><small>Fornecedor</small><br><strong>${esc(pc.supplier)}</strong><br>${esc(pc.supplierPhone || '')} ${esc(pc.supplierEmail || '')}</div>
+        <div><small>Entrega desejada</small><br><strong>${pc.expectedDate ? fmtDay(pc.expectedDate) : 'A combinar'}</strong><br><small>Emitido por ${esc(pc.createdByName || '')}</small></div></div>
+      <table><thead><tr><th>Produto</th><th class="r">Qtd.</th><th>Un.</th><th class="r">Custo unit.</th><th class="r">Total</th></tr></thead><tbody>
+      ${(pc.items || []).map(i => `<tr><td>${esc(i.name)}</td><td class="r">${qtyFmt(i.qty)}</td><td>${esc(i.unit)}</td><td class="r">${brl(i.unitCost)}</td><td class="r">${brl(i.total)}</td></tr>`).join('')}
+      <tr class="tot"><td colspan="4">Total estimado</td><td class="r">${brl(pc.total)}</td></tr></tbody></table>
+      ${pc.notes ? `<p><strong>Observações:</strong> ${esc(pc.notes)}</p>` : ''}
+      <div class="sig"><div>Comprador</div><div>Fornecedor</div></div>
+      <script>window.onload=()=>window.print()<\/script></body></html>`);
+    w.document.close();
   }
 
   function movementsTable() {
@@ -1822,7 +2239,8 @@ const ImperadorAdmin = (() => {
     openPdv, pdvFilter, pdvAdd, pdvQty, pdvSet, pdvFinish, viewOrder, cancelOrder, openPay,
     sellerDetail, openExpense, openEmployee, saveEmployee,
     openUser, userRole, userPerm, saveUser, deleteUser,
-    chatOpen, chatSend, chatClose, openRole, rolePerm, saveRole, deleteRole, openDevice, endSessions
+    chatOpen, chatSend, chatClose, tvToggleSound, tvFullscreen, tvExit, tvToRestock,
+    restockToggle, openPO, poSet, poFillContact, poRow, poRowAdd, poRowDel, savePO, poFromSupplier, poFromSelection, sendPO, poMark, printPO, receiptFromPO, openRole, rolePerm, saveRole, deleteRole, openDevice, endSessions
   };
 })();
 window.ImperadorAdmin = ImperadorAdmin;
