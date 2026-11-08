@@ -541,6 +541,9 @@ def iniciar_servidor() -> None:
     print(f"Tablet na mesa (PIX):     {url_local}/?view=tablet")
     print(f"Painel administrativo:    {url_local}/?view=admin")
     print(f"Banco de dados:           {storage.descricao()}")
+    if os.environ.get("RAILWAY_ENVIRONMENT") and not storage.USANDO_POSTGRES:
+        print("ATENÇÃO: rodando no Railway SEM PostgreSQL. Defina DATABASE_URL = ${{Postgres.DATABASE_URL}}")
+        print("         no serviço do sistema; sem isso os dados são perdidos a cada deploy.")
     if auth.precisa_trocar_senha_padrao():
         print(f"Primeiro acesso: usuário '{auth.USUARIO_PADRAO}' / senha '{auth.SENHA_PADRAO}' (será pedido para trocar)")
     print("=" * 74)

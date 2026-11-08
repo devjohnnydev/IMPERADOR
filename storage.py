@@ -33,7 +33,9 @@ AUTH_FILE = DATA_DIR / "admin_auth.json"
 UPLOADS_DIR = BASE_DIR / "public" / "uploads"
 BACKUP_DIR = DATA_DIR / "backups"
 
-DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
+# No Railway: DATABASE_URL = ${{Postgres.DATABASE_URL}} (ou DATABASE_PRIVATE_URL, rede interna)
+DATABASE_URL = (os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PRIVATE_URL")
+                or os.environ.get("DATABASE_PUBLIC_URL") or "").strip()
 USANDO_POSTGRES = DATABASE_URL.startswith(("postgres://", "postgresql://"))
 
 _lock = threading.RLock()
